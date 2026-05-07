@@ -77,3 +77,26 @@ output "setup_summary" {
     chunking_strategy   = "FIXED_SIZE: 300 tokens, 20% overlap"
   }
 }
+
+# DynamoDB outputs
+output "dynamodb_table_name" {
+  description = "Name of the DynamoDB conversations table"
+  value       = aws_dynamodb_table.conversations.name
+}
+
+output "dynamodb_table_arn" {
+  description = "ARN of the DynamoDB conversations table"
+  value       = aws_dynamodb_table.conversations.arn
+}
+
+# Lambda outputs
+output "lambda_function_arn" {
+  description = "ARN of the KB auto-sync Lambda function"
+  value       = aws_lambda_function.kb_auto_sync.arn
+}
+
+output "lambda_function_name" {
+  description = "Name of the KB auto-sync Lambda function"
+  value       = aws_lambda_function.kb_auto_sync.function_name
+}
+

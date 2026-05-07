@@ -378,3 +378,148 @@ resource "aws_bedrockagent_data_source" "kb_s3_source" {
     aws_s3_object.kb_documents
   ]
 }
+
+# ============================================================================
+# DynamoDB Table for L4 Conversation Memory
+# ============================================================================
+
+resource "aws_dynamodb_table" "conversations" {
+  name         = "geekbrain-conversations"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "session_id"
+  range_key    = "turn_id"
+
+  attribute {
+    name = "session_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "turn_id"
+    type = "N"
+  }
+
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
+  tags = {
+    Name        = "GeekBrain Conversations"
+    Environment = var.environment
+    Project     = "W4-GeekBrain-AI"
+  }
+}
+
+# ============================================================================
+# Lambda Function for S3 Auto-Sync (Bonus C — Task 26.3)
+# ============================================================================
+
+# IAM role for Lambda
+resource "aws_iam_role" "kb_sync_lambda_role" {
+  name = "geekbrain-kb-sync-lambda-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "KB Sync Lambda Role"
+    Environment = var.environment
+    Project     = "W4-GeekBrain-AI"
+  }
+}
+
+# Lambda basic execution policy (CloudWatch Logs)
+resource "aws_iam_role_policy_attachment" "lambda_basic" {
+  role       = aws_iam_role.kb_sync_lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# Lambda policy for Bedrock Agent (StartIngestionJob)
+resource "aws_iam_role_policy" "lambda_bedrock_policy" {
+  name = "bedrock-sync"
+  role = aws_iam_role.kb_sync_lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:StartIngestionJob",
+          "bedrock:GetIngestionJob",
+          "bedrock:ListIngestionJobs"
+        ]
+        Resource = [
+          aws_bedrockagent_knowledge_base.geekbrain_kb.arn,
+          "${aws_bedrockagent_knowledge_base.geekbrain_kb.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Package the Lambda function
+data "archive_file" "kb_sync_lambda" {
+  type        = "zip"
+  source_file = "${path.module}/../lambda/kb_auto_sync_lambda.py"
+  output_path = "${path.module}/../lambda/kb_auto_sync_lambda.zip"
+}
+
+# Lambda function
+resource "aws_lambda_function" "kb_auto_sync" {
+  filename         = data.archive_file.kb_sync_lambda.output_path
+  function_name    = "geekbrain-kb-auto-sync-${var.environment}"
+  role             = aws_iam_role.kb_sync_lambda_role.arn
+  handler          = "kb_auto_sync_lambda.lambda_handler"
+  source_code_hash = data.archive_file.kb_sync_lambda.output_base64sha256
+  runtime          = "python3.11"
+  timeout          = 30
+
+  environment {
+    variables = {
+      BEDROCK_KB_ID = aws_bedrockagent_knowledge_base.geekbrain_kb.id
+      BEDROCK_DS_ID = aws_bedrockagent_data_source.kb_s3_source.id
+    }
+  }
+
+  tags = {
+    Name        = "KB Auto-Sync Lambda"
+    Environment = var.environment
+    Project     = "W4-GeekBrain-AI"
+  }
+}
+
+# Permission for S3 to invoke Lambda
+resource "aws_lambda_permission" "s3_invoke" {
+  statement_id  = "AllowS3Invoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.kb_auto_sync.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = aws_s3_bucket.knowledge_base.arn
+  source_account = data.aws_caller_identity.current.account_id
+}
+
+# S3 bucket notification to trigger Lambda on object changes
+resource "aws_s3_bucket_notification" "kb_sync_trigger" {
+  bucket = aws_s3_bucket.knowledge_base.id
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.kb_auto_sync.arn
+    events              = ["s3:ObjectCreated:*", "s3:ObjectRemoved:*"]
+    filter_prefix       = "knowledge_base/"
+    filter_suffix       = ".md"
+  }
+
+  depends_on = [aws_lambda_permission.s3_invoke]
+}

@@ -225,5 +225,178 @@ class TestMemoryManagerInterface:
             base.clear_session("session")
 
 
+class TestDynamoDBMemory:
+    """
+    Unit tests for DynamoDBMemory using mock DynamoDB.
+
+    These tests mock boto3 to avoid needing real AWS credentials.
+    """
+
+    def _make_memory(self, items=None):
+        """Create a DynamoDBMemory instance with mocked DynamoDB."""
+        from unittest.mock import MagicMock, patch
+        from decimal import Decimal
+        import importlib
+
+        # Mock boto3.resource at the sys.modules level
+        mock_table = MagicMock()
+        mock_dynamo = MagicMock()
+        mock_dynamo.Table.return_value = mock_table
+
+        mock_boto3 = MagicMock()
+        mock_boto3.resource.return_value = mock_dynamo
+
+        # Setup default query response
+        if items is None:
+            items = []
+        mock_table.query.return_value = {"Items": items}
+
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            # Re-import to pick up the mock
+            import memory as mem_module
+            importlib.reload(mem_module)
+            mem = mem_module.DynamoDBMemory(
+                table_name="test-conversations",
+                window_size=3,
+                ttl_days=30,
+                region_name="us-east-1",
+            )
+
+        # Store mocks for assertion
+        mem._mock_table = mock_table
+        return mem
+
+    def test_save_turn_puts_item(self):
+        """Test save_turn() calls put_item with correct structure."""
+        from decimal import Decimal
+        mem = self._make_memory()
+        turn = make_turn(1, "Who leads Platform?", "Alex Chen")
+        mem.save_turn("s-001", turn)
+
+        mem._mock_table.put_item.assert_called_once()
+        item = mem._mock_table.put_item.call_args[1]["Item"]
+        assert item["session_id"] == "s-001"
+        assert item["turn_id"] == Decimal("1")
+        assert item["query"] == "Who leads Platform?"
+        assert item["response"] == "Alex Chen"
+        assert "expires_at" in item
+
+    def test_save_turn_ttl_is_30_days(self):
+        """Test that TTL is set to ~30 days in the future."""
+        import time
+        from decimal import Decimal
+        mem = self._make_memory()
+        before = int(time.time())
+        mem.save_turn("s-001", make_turn(1))
+        after = int(time.time())
+
+        item = mem._mock_table.put_item.call_args[1]["Item"]
+        ttl = int(item["expires_at"])
+        expected_min = before + (30 * 86400)
+        expected_max = after + (30 * 86400)
+        assert expected_min <= ttl <= expected_max
+
+    def test_get_history_returns_turns(self):
+        """Test get_history() queries DynamoDB and returns ConversationTurn objects."""
+        from decimal import Decimal
+        items = [
+            {
+                "session_id": "s-001",
+                "turn_id": Decimal("1"),
+                "timestamp": "2026-05-07T10:00:00",
+                "query": "query 1",
+                "response": "response 1",
+                "context_used": ["src.md"],
+            },
+            {
+                "session_id": "s-001",
+                "turn_id": Decimal("2"),
+                "timestamp": "2026-05-07T10:01:00",
+                "query": "query 2",
+                "response": "response 2",
+                "context_used": [],
+            },
+        ]
+        mem = self._make_memory(items=items)
+        history = mem.get_history("s-001")
+        assert len(history) == 2
+        assert history[0].query == "query 1"
+        assert history[1].turn_id == 2
+
+    def test_get_history_applies_window(self):
+        """Test that window_size limits returned turns."""
+        from decimal import Decimal
+        items = [
+            {
+                "session_id": "s-001",
+                "turn_id": Decimal(str(i)),
+                "timestamp": f"2026-05-07T10:{i:02d}:00",
+                "query": f"q{i}",
+                "response": f"r{i}",
+                "context_used": [],
+            }
+            for i in range(1, 7)  # 6 items
+        ]
+        mem = self._make_memory(items=items)
+        # window_size=3, so last 3
+        history = mem.get_history("s-001")
+        assert len(history) == 3
+        assert [t.turn_id for t in history] == [4, 5, 6]
+
+    def test_get_history_empty_session(self):
+        """Test empty session returns empty list."""
+        mem = self._make_memory(items=[])
+        history = mem.get_history("unknown")
+        assert history == []
+
+    def test_get_history_error_returns_empty(self):
+        """Test that DynamoDB errors return empty list (graceful degradation)."""
+        mem = self._make_memory()
+        mem._table.query.side_effect = Exception("DynamoDB timeout")
+        history = mem.get_history("s-001")
+        assert history == []
+
+    def test_format_for_llm(self):
+        """Test format output contains User/Assistant labels."""
+        mem = self._make_memory()
+        turns = [make_turn(1, "Hello", "Hi"), make_turn(2, "Bye", "Goodbye")]
+        result = mem.format_for_llm(turns)
+        assert "User: Hello" in result
+        assert "Assistant: Hi" in result
+        assert "User: Bye" in result
+
+    def test_format_for_llm_empty(self):
+        """Test format returns empty string for no history."""
+        mem = self._make_memory()
+        assert mem.format_for_llm([]) == ""
+
+    def test_clear_session_deletes_items(self):
+        """Test clear_session batch-deletes all items for a session."""
+        from decimal import Decimal
+        items = [
+            {"session_id": "s-001", "turn_id": Decimal("1")},
+            {"session_id": "s-001", "turn_id": Decimal("2")},
+        ]
+        mem = self._make_memory(items=items)
+        mem._table.query.return_value = {"Items": items}
+
+        # Mock batch_writer context manager
+        from unittest.mock import MagicMock
+        mock_batch = MagicMock()
+        mem._table.batch_writer.return_value.__enter__ = MagicMock(return_value=mock_batch)
+        mem._table.batch_writer.return_value.__exit__ = MagicMock(return_value=False)
+
+        mem.clear_session("s-001")
+        assert mock_batch.delete_item.call_count == 2
+
+    def test_save_turn_error_raises(self):
+        """Test that DynamoDB put_item errors propagate."""
+        mem = self._make_memory()
+        mem._table.put_item.side_effect = Exception("Throughput exceeded")
+        with pytest.raises(Exception, match="Throughput exceeded"):
+            mem.save_turn("s-001", make_turn(1))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
