@@ -112,7 +112,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeekBrain AI — Observability Dashboard</title>
+    <title>GeekBrain AI — Chat & Observability</title>
     <style>
         :root {
             --bg: #0f1117;
@@ -142,6 +142,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             background: linear-gradient(135deg, #1a1d27 0%, #0f1117 100%);
             border-bottom: 1px solid var(--border);
             padding: 20px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        header .left {
             display: flex;
             align-items: center;
             gap: 16px;
@@ -177,66 +182,144 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         /* ── Layout ─────────────────────────────── */
         .container {
             display: grid;
-            grid-template-columns: 340px 1fr;
+            grid-template-columns: 480px 1fr;
             height: calc(100vh - 69px);
         }
 
-        /* ── Sidebar ────────────────────────────── */
-        .sidebar {
+        /* ── Chat Panel ────────────────────────────── */
+        .chat-panel {
             background: var(--surface);
             border-right: 1px solid var(--border);
-            overflow-y: auto;
-            padding: 16px;
+            display: flex;
+            flex-direction: column;
         }
-        .sidebar h2 {
-            font-size: 0.85em;
+        .chat-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .chat-header h2 {
+            font-size: 0.9em;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             color: var(--muted);
             margin-bottom: 12px;
         }
-        .query-card {
-            background: var(--surface2);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .query-card:hover { border-color: var(--accent); transform: translateX(2px); }
-        .query-card.active { border-color: var(--accent); background: rgba(108, 99, 255, 0.08); }
-        .query-card .q-text {
-            font-size: 0.85em;
-            font-weight: 500;
-            margin-bottom: 6px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .query-card .q-meta {
+        .level-selector {
             display: flex;
             gap: 8px;
-            font-size: 0.7em;
-            color: var(--muted);
+            margin-bottom: 12px;
         }
-        .q-meta .level-badge {
-            padding: 2px 6px;
-            border-radius: 4px;
+        .level-btn {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            color: var(--text);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8em;
             font-weight: 600;
+            transition: all 0.2s;
+        }
+        .level-btn:hover { border-color: var(--accent); }
+        .level-btn.active { border-color: var(--accent); background: rgba(108, 99, 255, 0.15); }
+        .session-info {
+            font-size: 0.75em;
+            color: var(--muted);
+            padding: 8px;
+            background: var(--bg);
+            border-radius: 6px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        .message {
+            margin-bottom: 16px;
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .message.user {
+            text-align: right;
+        }
+        .message .msg-bubble {
+            display: inline-block;
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 12px;
             font-size: 0.9em;
         }
-        .level-badge.L1 { background: rgba(34,197,94,0.15); color: var(--green); }
-        .level-badge.L2 { background: rgba(59,130,246,0.15); color: var(--blue); }
-        .level-badge.L3 { background: rgba(245,158,11,0.15); color: var(--orange); }
-        .level-badge.L4 { background: rgba(168,85,247,0.15); color: var(--purple); }
+        .message.user .msg-bubble {
+            background: var(--accent);
+            color: white;
+            text-align: left;
+        }
+        .message.assistant .msg-bubble {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+        }
+        .message .msg-meta {
+            font-size: 0.7em;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+        .message.assistant .msg-meta {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
 
-        /* ── Main Panel ─────────────────────────── */
-        .main {
+        .chat-input-area {
+            padding: 16px;
+            border-top: 1px solid var(--border);
+        }
+        .input-wrapper {
+            display: flex;
+            gap: 8px;
+        }
+        .chat-input {
+            flex: 1;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-family: inherit;
+            resize: none;
+        }
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .send-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .send-btn:hover { background: #5b54e0; }
+        .send-btn:disabled {
+            background: var(--surface2);
+            color: var(--muted);
+            cursor: not-allowed;
+        }
+
+        /* ── Observability Panel ─────────────────────────── */
+        .obs-panel {
             overflow-y: auto;
             padding: 24px 32px;
         }
-        .main h2 { font-size: 1.1em; margin-bottom: 20px; }
+        .obs-panel h2 { font-size: 1.1em; margin-bottom: 20px; }
         .empty-state {
             text-align: center;
             padding: 80px 20px;
@@ -264,10 +347,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             padding: 16px;
             transition: all 0.3s;
             animation: fadeIn 0.4s ease-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to   { opacity: 1; transform: translateY(0); }
         }
         .event::before {
             content: '';
@@ -339,6 +418,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             font-weight: 600;
             font-size: 0.85em;
         }
+        .level-badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.85em;
+        }
+        .level-badge.L1 { background: rgba(34,197,94,0.15); color: var(--green); }
+        .level-badge.L2 { background: rgba(59,130,246,0.15); color: var(--blue); }
+        .level-badge.L3 { background: rgba(245,158,11,0.15); color: var(--orange); }
+        .level-badge.L4 { background: rgba(168,85,247,0.15); color: var(--purple); }
         .proc-time {
             display: inline-block;
             background: rgba(239,68,68,0.12);
@@ -349,103 +438,346 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             font-size: 1.1em;
         }
 
-        /* ── Refresh button ─────────────────────── */
-        .refresh-btn {
-            background: var(--accent);
-            color: white;
-            border: none;
-            padding: 8px 16px;
+        .new-session-btn {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 6px 12px;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 0.8em;
-            float: right;
-            transition: background 0.2s;
+            font-size: 0.75em;
+            transition: all 0.2s;
         }
-        .refresh-btn:hover { background: #5b54e0; }
+        .new-session-btn:hover {
+            border-color: var(--accent);
+            background: rgba(108, 99, 255, 0.1);
+        }
     </style>
 </head>
 <body>
     <header>
-        <h1>🧠 GeekBrain AI — Observability</h1>
-        <span class="badge"><span class="status-dot"></span>Live</span>
+        <div class="left">
+            <h1>🧠 GeekBrain AI — Chat & Observability</h1>
+            <span class="badge"><span class="status-dot"></span>Live</span>
+        </div>
     </header>
 
     <div class="container">
-        <div class="sidebar">
-            <h2>Recent Queries</h2>
-            <div id="query-list">
-                <div class="empty-state" style="padding:40px 10px;">
-                    <div class="icon">📭</div>
-                    <p>No queries yet.<br>Send a query to the API to see events.</p>
+        <!-- Chat Panel -->
+        <div class="chat-panel">
+            <div class="chat-header">
+                <h2>💬 Chat Interface</h2>
+                <div class="level-selector">
+                    <button class="level-btn active" data-level="L1" onclick="selectLevel('L1')">L1</button>
+                    <button class="level-btn" data-level="L2" onclick="selectLevel('L2')">L2</button>
+                    <button class="level-btn" data-level="L3" onclick="selectLevel('L3')">L3</button>
+                    <button class="level-btn" data-level="L4" onclick="selectLevel('L4')">L4</button>
+                </div>
+                <div class="session-info">
+                    <span id="session-display">Session: <strong id="session-id">-</strong></span>
+                    <button class="new-session-btn" onclick="newSession()">🔄 New Session</button>
+                </div>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="empty-state" style="padding:60px 20px;">
+                    <div class="icon">�</div>
+                    <p>Start a conversation by typing a question below.</p>
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="chat-input" 
+                        class="chat-input" 
+                        placeholder="Ask a question about GeekBrain..."
+                        rows="2"
+                        onkeydown="handleKeyDown(event)"
+                    ></textarea>
+                    <button class="send-btn" id="send-btn" onclick="sendMessage()">Send</button>
                 </div>
             </div>
         </div>
-        <div class="main" id="main-panel">
+
+        <!-- Observability Panel -->
+        <div class="obs-panel" id="obs-panel">
             <div class="empty-state">
                 <div class="icon">🔍</div>
-                <p>Select a query from the sidebar to view its processing pipeline.</p>
+                <p>Send a query to see the processing pipeline in real-time.</p>
             </div>
         </div>
     </div>
 
     <script>
-        const API = window.location.origin;
-        let activeQueryId = null;
-        let refreshInterval = null;
+        const MAIN_API = 'http://localhost:8001';
+        const DASHBOARD_API = window.location.origin;
+        
+        let currentLevel = 'L1';
+        let sessionId = generateSessionId();
+        let messages = [];
+        let isProcessing = false;
+        let currentQueryId = null;
+        let pollInterval = null;
 
-        // ── Fetch and render query list ─────────
-        async function loadQueries() {
+        // ── Initialize ──────────────────────────
+        function init() {
+            document.getElementById('session-id').textContent = sessionId;
+            document.getElementById('chat-input').focus();
+        }
+
+        // ── Level Selection ─────────────────────
+        function selectLevel(level) {
+            currentLevel = level;
+            document.querySelectorAll('.level-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.level === level);
+            });
+            
+            // Show/hide session info based on L4
+            const sessionInfo = document.querySelector('.session-info');
+            sessionInfo.style.display = level === 'L4' ? 'block' : 'none';
+        }
+
+        // ── Session Management ──────────────────
+        function generateSessionId() {
+            return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        }
+
+        function newSession() {
+            sessionId = generateSessionId();
+            document.getElementById('session-id').textContent = sessionId;
+            messages = [];
+            renderMessages();
+            clearObservability();
+        }
+
+        // ── Message Handling ────────────────────
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const query = input.value.trim();
+            
+            if (!query || isProcessing) return;
+            
+            // Add user message
+            messages.push({ role: 'user', content: query });
+            input.value = '';
+            renderMessages();
+            
+            // Disable input
+            isProcessing = true;
+            document.getElementById('send-btn').disabled = true;
+            document.getElementById('chat-input').disabled = true;
+            
+            // Show loading in observability
+            showLoadingObservability();
+            
             try {
-                const res = await fetch(`${API}/api/queries`);
-                const data = await res.json();
-                const list = document.getElementById('query-list');
-
-                if (!data.queries || data.queries.length === 0) {
-                    list.innerHTML = '<div class="empty-state" style="padding:40px 10px;"><div class="icon">📭</div><p>No queries yet.</p></div>';
-                    return;
+                // Send to API
+                const payload = {
+                    query: query,
+                    level: currentLevel
+                };
+                
+                if (currentLevel === 'L4') {
+                    payload.session_id = sessionId;
                 }
+                
+                const response = await fetch(`${MAIN_API}/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Add assistant message
+                messages.push({
+                    role: 'assistant',
+                    content: data.answer,
+                    sources: data.sources,
+                    tools_used: data.tools_used,
+                    processing_time: data.processing_time
+                });
+                
+                renderMessages();
+                
+                // Load observability for this query
+                await loadLatestQueryObservability();
+                
+            } catch (error) {
+                console.error('Error sending message:', error);
+                messages.push({
+                    role: 'assistant',
+                    content: '❌ Error: ' + error.message,
+                    error: true
+                });
+                renderMessages();
+            } finally {
+                isProcessing = false;
+                document.getElementById('send-btn').disabled = false;
+                document.getElementById('chat-input').disabled = false;
+                document.getElementById('chat-input').focus();
+            }
+        }
 
-                list.innerHTML = data.queries.map(q => `
-                    <div class="query-card ${q.query_id === activeQueryId ? 'active' : ''}"
-                         onclick="selectQuery('${q.query_id}')">
-                        <div class="q-text">${escapeHtml(q.query)}</div>
-                        <div class="q-meta">
-                            <span class="level-badge ${q.level}">${q.level}</span>
-                            <span>${q.processing_time_ms ? q.processing_time_ms.toFixed(0) + 'ms' : '...'}</span>
-                            <span>${q.tools_used.length > 0 ? '🔧' + q.tools_used.length : ''}</span>
-                        </div>
+        function renderMessages() {
+            const container = document.getElementById('chat-messages');
+            
+            if (messages.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="padding:60px 20px;">
+                        <div class="icon">💬</div>
+                        <p>Start a conversation by typing a question below.</p>
                     </div>
-                `).join('');
-            } catch (e) {
-                console.error('Failed to load queries:', e);
-            }
-        }
-
-        // ── Load & render events for a query ────
-        async function selectQuery(queryId) {
-            activeQueryId = queryId;
-            loadQueries();  // update active state
-
-            try {
-                const res = await fetch(`${API}/api/query/${queryId}`);
-                const data = await res.json();
-                renderEvents(data.query_id, data.events);
-            } catch (e) {
-                console.error('Failed to load query details:', e);
-            }
-        }
-
-        function renderEvents(queryId, events) {
-            const panel = document.getElementById('main-panel');
-
-            if (!events || events.length === 0) {
-                panel.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>No events yet for this query.</p></div>';
+                `;
                 return;
             }
+            
+            container.innerHTML = messages.map(msg => {
+                if (msg.role === 'user') {
+                    return `
+                        <div class="message user">
+                            <div class="msg-bubble">${escapeHtml(msg.content)}</div>
+                        </div>
+                    `;
+                } else {
+                    const meta = [];
+                    if (msg.processing_time) {
+                        meta.push(`⏱ ${(msg.processing_time * 1000).toFixed(0)}ms`);
+                    }
+                    if (msg.tools_used && msg.tools_used.length > 0) {
+                        meta.push(`🔧 ${msg.tools_used.join(', ')}`);
+                    }
+                    if (msg.sources && msg.sources.length > 0) {
+                        meta.push(`📄 ${msg.sources.length} sources`);
+                    }
+                    
+                    return `
+                        <div class="message assistant">
+                            <div class="msg-bubble">
+                                ${escapeHtml(msg.content)}
+                                ${msg.error ? '' : `
+                                    <div class="msg-meta">
+                                        ${meta.join(' • ')}
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join('');
+            
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }
 
-            let html = `<h2>Pipeline: ${queryId} <button class="refresh-btn" onclick="selectQuery('${queryId}')">↻ Refresh</button></h2>`;
+        // ── Observability ───────────────────────
+        function showLoadingObservability() {
+            const panel = document.getElementById('obs-panel');
+            panel.innerHTML = `
+                <h2>🔄 Processing Query...</h2>
+                <div class="empty-state">
+                    <div class="icon">⏳</div>
+                    <p>Waiting for events...</p>
+                </div>
+            `;
+        }
+
+        function clearObservability() {
+            const panel = document.getElementById('obs-panel');
+            panel.innerHTML = `
+                <div class="empty-state">
+                    <div class="icon">🔍</div>
+                    <p>Send a query to see the processing pipeline in real-time.</p>
+                </div>
+            `;
+        }
+
+        async function loadLatestQueryObservability() {
+            try {
+                // Get latest query
+                const res = await fetch(`${DASHBOARD_API}/api/queries`);
+                const data = await res.json();
+                
+                if (data.queries && data.queries.length > 0) {
+                    const latestQuery = data.queries[0];
+                    currentQueryId = latestQuery.query_id;
+                    
+                    // Start polling for events
+                    await pollQueryEvents(currentQueryId);
+                }
+            } catch (e) {
+                console.error('Failed to load observability:', e);
+            }
+        }
+
+        async function pollQueryEvents(queryId) {
+            let attempts = 0;
+            const maxAttempts = 20;
+            
+            const poll = async () => {
+                try {
+                    const res = await fetch(`${DASHBOARD_API}/api/query/${queryId}`);
+                    const data = await res.json();
+                    
+                    renderObservability(data.query_id, data.events);
+                    
+                    // Check if done
+                    const lastEvent = data.events[data.events.length - 1];
+                    if (lastEvent && lastEvent.event_type === 'response_generated') {
+                        if (pollInterval) {
+                            clearInterval(pollInterval);
+                            pollInterval = null;
+                        }
+                        return;
+                    }
+                    
+                    attempts++;
+                    if (attempts >= maxAttempts) {
+                        if (pollInterval) {
+                            clearInterval(pollInterval);
+                            pollInterval = null;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Polling error:', e);
+                }
+            };
+            
+            // Initial load
+            await poll();
+            
+            // Poll every 500ms
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(poll, 500);
+        }
+
+        function renderObservability(queryId, events) {
+            const panel = document.getElementById('obs-panel');
+            
+            if (!events || events.length === 0) {
+                panel.innerHTML = `
+                    <h2>Pipeline: ${queryId}</h2>
+                    <div class="empty-state">
+                        <div class="icon">⏳</div>
+                        <p>No events yet...</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `<h2>🔍 Pipeline: ${queryId}</h2>`;
             html += '<div class="timeline">';
-
+            
             events.forEach(e => {
                 html += `<div class="event ${e.event_type}">`;
                 html += `<div class="ev-header">
@@ -455,9 +787,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 html += `<div class="ev-body">${renderEventBody(e)}</div>`;
                 html += '</div>';
             });
-
+            
             html += '</div>';
             panel.innerHTML = html;
+            
+            // Auto-scroll to bottom
+            panel.scrollTop = panel.scrollHeight;
         }
 
         function renderEventBody(e) {
@@ -521,12 +856,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
-        // ── Auto-refresh ────────────────────────
-        loadQueries();
-        refreshInterval = setInterval(() => {
-            loadQueries();
-            if (activeQueryId) selectQuery(activeQueryId);
-        }, 3000);
+        // ── Start ───────────────────────────────
+        init();
     </script>
 </body>
 </html>

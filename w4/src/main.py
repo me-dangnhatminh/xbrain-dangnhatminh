@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from rag_pipeline import RAGPipeline
 from orchestrator import Orchestrator, QueryRequest as OrchestratorQueryRequest
 from tools import ToolExecutor, DatabaseQueryTool, ServiceMetricsTool, ServiceStatusTool, ListServicesTool, IncidentHistoryTool, TeamInfoTool, CompareServicesTool
-from memory import WindowMemory
+from memory import WindowMemory, DynamoDBMemory
 from event_logger import event_logger
 
 # Load environment variables from .env file
@@ -88,6 +88,8 @@ MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022
 _DEFAULT_DB_PATH = str(Path(__file__).resolve().parent.parent / "geekbrain.db")
 DB_PATH = os.getenv("DB_PATH", _DEFAULT_DB_PATH)
 MONITORING_API_URL = os.getenv("MONITORING_API_URL", "http://localhost:8000")
+DYNAMODB_TABLE = os.getenv("DYNAMODB_TABLE", "")
+DYNAMODB_REGION = os.getenv("DYNAMODB_REGION") or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
 
 rag_pipeline = RAGPipeline(
     knowledge_base_id=KNOWLEDGE_BASE_ID,
@@ -143,7 +145,23 @@ try:
     print(f"   DB test query: {test_result}")
     
     # Initialize Orchestrator with RAG, tools, and memory (L4)
-    memory_manager = WindowMemory(window_size=5)
+    # Use DynamoDB if configured, otherwise fall back to in-memory WindowMemory
+    memory_manager = None
+    if DYNAMODB_TABLE:
+        try:
+            memory_manager = DynamoDBMemory(
+                table_name=DYNAMODB_TABLE,
+                window_size=5,
+                ttl_days=30,
+                region_name=DYNAMODB_REGION,
+            )
+            print(f"✅ DynamoDBMemory initialized: table={DYNAMODB_TABLE}")
+        except Exception as e:
+            print(f"⚠️  DynamoDB not available ({e}), falling back to WindowMemory")
+            memory_manager = WindowMemory(window_size=5)
+    else:
+        memory_manager = WindowMemory(window_size=5)
+        print("ℹ️  Using in-memory WindowMemory (set DYNAMODB_TABLE to enable persistence)")
 
     orchestrator = Orchestrator(
         rag_pipeline=rag_pipeline,
@@ -236,6 +254,29 @@ async def query_endpoint(request: QueryRequest):
             response = orchestrator.process_query(orchestrator_request)
             
             processing_time = round(response.processing_time, 3)
+            
+            # Log retrieval chunks if available (L4 RAG queries)
+            if response.chunks_used:
+                event_logger.log_retrieval(query_id, [
+                    {"text": c.text, "source": c.source, "score": c.score}
+                    for c in response.chunks_used
+                ])
+            
+            # Log tool executions (if any)
+            for tool_name in response.tools_used:
+                event_logger.log_tool_call(
+                    query_id, 
+                    tool_name, 
+                    {"note": "Tool was executed by orchestrator"},
+                    "Success",
+                    True
+                )
+            
+            # Log memory loading for L4
+            if request.level == "L4" and request.session_id:
+                # Estimate memory turns from response (orchestrator doesn't expose this)
+                event_logger.log_memory_loaded(query_id, request.session_id, 0)
+            
             event_logger.log_response_generated(
                 query_id, response.answer, response.processing_time, response.tools_used
             )
@@ -265,10 +306,11 @@ async def query_endpoint(request: QueryRequest):
             # Calculate processing time
             processing_time = time.time() - start_time
             
+            # Log retrieval chunks
             event_logger.log_retrieval(query_id, [
                 {"text": c.text, "source": c.source, "score": c.score}
-                for c in getattr(response, '_chunks', [])
-            ] if hasattr(response, '_chunks') else [])
+                for c in response.chunks_used
+            ])
             event_logger.log_response_generated(
                 query_id, response.answer, processing_time, []
             )

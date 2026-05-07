@@ -30,6 +30,7 @@ class QueryResponse:
     sources: list
     tools_used: list
     processing_time: float
+    chunks_used: list = None  # Optional: for observability logging
 
 
 class Orchestrator:
@@ -102,7 +103,8 @@ class Orchestrator:
             answer=rag_response.answer,
             sources=rag_response.sources,
             tools_used=[],
-            processing_time=0.0  # Will be set by process_query
+            processing_time=0.0,  # Will be set by process_query
+            chunks_used=rag_response.chunks_used if hasattr(rag_response, 'chunks_used') else None
         )
     
     def _process_l2(self, request: QueryRequest) -> QueryResponse:
@@ -118,7 +120,8 @@ class Orchestrator:
             answer=rag_response.answer,
             sources=rag_response.sources,
             tools_used=[],
-            processing_time=0.0  # Will be set by process_query
+            processing_time=0.0,  # Will be set by process_query
+            chunks_used=rag_response.chunks_used if hasattr(rag_response, 'chunks_used') else None
         )
     
     def _process_l3(self, request: QueryRequest) -> QueryResponse:
@@ -159,7 +162,8 @@ class Orchestrator:
             answer=result.get("answer", ""),
             sources=result.get("sources", []),
             tools_used=result.get("tools_used", []),
-            processing_time=0.0  # Will be set by process_query
+            processing_time=0.0,  # Will be set by process_query
+            chunks_used=None  # L3 uses tools, not RAG retrieval
         )
     
     def _process_l4(self, request: QueryRequest) -> QueryResponse:
@@ -247,7 +251,8 @@ class Orchestrator:
             answer=answer,
             sources=result.get("sources", []),
             tools_used=result.get("tools_used", []),
-            processing_time=0.0  # Will be set by process_query
+            processing_time=0.0,  # Will be set by process_query
+            chunks_used=chunks if chunks else None  # Add chunks for observability
         )
 
 
