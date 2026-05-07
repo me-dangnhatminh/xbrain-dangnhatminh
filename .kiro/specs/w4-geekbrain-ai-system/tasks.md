@@ -150,8 +150,8 @@ This implementation plan follows a 3-day roadmap (Tuesday → Friday) to build a
 
 ### Phase 4: L3 Implementation - Tool-Augmented RAG (Thursday Late Afternoon)
 
-- [ ] 11. Implement Database Query Tool
-  - [ ] 11.1 Create DatabaseQueryTool class in w4/src/tools.py
+- [x] 11. Implement Database Query Tool
+  - [x] 11.1 Create DatabaseQueryTool class in w4/src/tools.py
     - Implement execute_query() method accepting SQL string
     - Validate query is read-only (starts with SELECT)
     - Reject write operations (INSERT, UPDATE, DELETE, DROP)
@@ -159,7 +159,7 @@ This implementation plan follows a 3-day roadmap (Tuesday → Friday) to build a
     - Return ToolResult with success flag, data, or error message
     - _Requirements: 5.3, 5.4, 5.5, 5.6, 17.7_
   
-  - [ ] 11.2 Define tool definition for LLM
+  - [x] 11.2 Define tool definition for LLM
     - Create get_definition() method returning ToolDefinition
     - Specify name: "query_database"
     - Describe use case: "Use for historical data: costs, incidents, SLA targets, daily metrics from Jan-Mar 2026"
@@ -173,8 +173,8 @@ This implementation plan follows a 3-day roadmap (Tuesday → Friday) to build a
     - Test malformed SQL returns error
     - _Requirements: 5.7, 5.8, 13.1_
 
-- [ ] 12. Implement Service Metrics Tool
-  - [ ] 12.1 Create ServiceMetricsTool class in w4/src/tools.py
+- [x] 12. Implement Service Metrics Tool
+  - [x] 12.1 Create ServiceMetricsTool class in w4/src/tools.py
     - Implement get_metrics() method accepting service_name
     - Make HTTP GET request to monitoring API: /metrics/{service_name}
     - Set timeout to 3 seconds
@@ -182,7 +182,7 @@ This implementation plan follows a 3-day roadmap (Tuesday → Friday) to build a
     - Return ToolResult with metrics or error
     - _Requirements: 6.2, 6.3, 6.4, 6.5, 17.7_
   
-  - [ ] 12.2 Define tool definition for LLM
+  - [x] 12.2 Define tool definition for LLM
     - Create get_definition() method
     - Specify name: "get_service_metrics"
     - Describe use case: "Use for current live data: latency, error rate, request volume"
@@ -196,34 +196,34 @@ This implementation plan follows a 3-day roadmap (Tuesday → Friday) to build a
     - Mock HTTP requests for faster tests
     - _Requirements: 6.6, 6.7, 6.8_
 
-- [ ] 13. Implement 5 additional tools
-  - [ ] 13.1 Implement ServiceStatusTool
+- [x] 13. Implement 5 additional tools
+  - [x] 13.1 Implement ServiceStatusTool
     - Create get_status() method calling GET /status/{service_name}
     - Return current status: healthy, degraded, or down
     - Define tool definition with name "get_service_status"
     - _Requirements: 17.1, 17.8_
   
-  - [ ] 13.2 Implement ListServicesTool
+  - [x] 13.2 Implement ListServicesTool
     - Create list_services() method calling GET /services
     - Return list of all 6 services
     - Define tool definition with name "list_services"
     - _Requirements: 17.3, 17.8_
   
-  - [ ] 13.3 Implement IncidentHistoryTool
+  - [x] 13.3 Implement IncidentHistoryTool
     - Create get_incidents() method with optional service_name filter
     - Query incidents table from database
     - Return past incidents with severity, date, root cause
     - Define tool definition with name "get_incident_history"
     - _Requirements: 17.4, 17.8_
   
-  - [ ] 13.4 Implement TeamInfoTool
+  - [x] 13.4 Implement TeamInfoTool
     - Create get_team_info() method accepting team_name
     - Use RAG pipeline to search for team documents
     - Return team lead, members, responsibilities
     - Define tool definition with name "get_team_info"
     - _Requirements: 17.5, 17.8_
   
-  - [ ] 13.5 Implement CompareServicesTool
+  - [x] 13.5 Implement CompareServicesTool
     - Create compare_services() method accepting service_names list and metric
     - Call get_metrics() for each service
     - Return comparison dictionary
@@ -236,14 +236,14 @@ This implementation plan follows a 3-day roadmap (Tuesday → Friday) to build a
     - Verify tool definitions are correctly formatted
     - _Requirements: 17.9, 17.10_
 
-- [ ] 14. Implement tool orchestration
-  - [ ] 14.1 Create ToolOrchestrator class in w4/src/orchestrator.py
+- [x] 14. Implement tool orchestration
+  - [x] 14.1 Create ToolOrchestrator class in w4/src/orchestrator.py
     - Initialize with list of tool instances and LLM client
     - Collect tool definitions from all tools
     - Implement process_query_with_tools() method
     - _Requirements: 7.1, 7.2_
   
-  - [ ] 14.2 Implement tool execution loop
+  - [x] 14.2 Implement tool execution loop
     - Send query + context + tool definitions to LLM
     - Parse LLM response for tool_use requests
     - Execute requested tool with provided parameters
@@ -251,7 +251,7 @@ This implementation plan follows a 3-day roadmap (Tuesday → Friday) to build a
     - Repeat until LLM generates final answer (max 5 iterations)
     - _Requirements: 7.5, 7.6, 7.7, 7.8, 7.9, 7.10_
   
-  - [ ] 14.3 Update system prompt for L3
+  - [x] 14.3 Update system prompt for L3
     - Add tool selection guidance: when to use database vs metrics API
     - Add instruction to preserve exact numerical values
     - Add instruction to cite tool results as sources

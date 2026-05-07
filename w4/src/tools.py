@@ -182,6 +182,338 @@ class ServiceMetricsTool:
         )
 
 
+class ServiceStatusTool:
+    """Tool for getting live status of a service."""
+    
+    def __init__(self, api_base_url: str = "http://localhost:8000"):
+        """
+        Initialize service status tool.
+        
+        Args:
+            api_base_url: Base URL of monitoring API
+        """
+        self.api_base_url = api_base_url
+        self.timeout = 3  # seconds
+    
+    def get_status(self, service_name: str) -> ToolResult:
+        """
+        Get current operational status of a service.
+        
+        Args:
+            service_name: Name of service (e.g., 'PaymentGW')
+            
+        Returns:
+            ToolResult with status (healthy/degraded/down) or error
+        """
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/status/{service_name}",
+                timeout=self.timeout
+            )
+            
+            if response.status_code == 404:
+                return ToolResult(
+                    success=False,
+                    data=None,
+                    error=f"Service '{service_name}' not found"
+                )
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            return ToolResult(success=True, data=data)
+            
+        except requests.Timeout:
+            return ToolResult(
+                success=False,
+                data=None,
+                error="Monitoring API timeout - service may be down"
+            )
+        except requests.RequestException as e:
+            return ToolResult(
+                success=False,
+                data=None,
+                error=f"Failed to fetch status: {str(e)}"
+            )
+    
+    def get_definition(self) -> ToolDefinition:
+        """Get tool definition for LLM."""
+        return ToolDefinition(
+            name="get_service_status",
+            description="Get current operational status of a service (healthy/degraded/down)",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "service_name": {
+                        "type": "string",
+                        "description": "Name of the service (e.g., PaymentGW, NotificationSvc)"
+                    }
+                },
+                "required": ["service_name"]
+            }
+        )
+
+
+class ListServicesTool:
+    """Tool for listing all services in the system."""
+    
+    def __init__(self, api_base_url: str = "http://localhost:8000"):
+        """
+        Initialize list services tool.
+        
+        Args:
+            api_base_url: Base URL of monitoring API
+        """
+        self.api_base_url = api_base_url
+        self.timeout = 3  # seconds
+    
+    def list_services(self) -> ToolResult:
+        """
+        Get list of all services in the GeekBrain system.
+        
+        Returns:
+            ToolResult with list of service names or error
+        """
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/services",
+                timeout=self.timeout
+            )
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            return ToolResult(success=True, data=data)
+            
+        except requests.Timeout:
+            return ToolResult(
+                success=False,
+                data=None,
+                error="Monitoring API timeout - service may be down"
+            )
+        except requests.RequestException as e:
+            return ToolResult(
+                success=False,
+                data=None,
+                error=f"Failed to fetch services list: {str(e)}"
+            )
+    
+    def get_definition(self) -> ToolDefinition:
+        """Get tool definition for LLM."""
+        return ToolDefinition(
+            name="list_services",
+            description="Get list of all services in the GeekBrain system",
+            parameters={
+                "type": "object",
+                "properties": {}
+            }
+        )
+
+
+class IncidentHistoryTool:
+    """Tool for querying incident history from database."""
+    
+    def __init__(self, db_tool: DatabaseQueryTool):
+        """
+        Initialize incident history tool.
+        
+        Args:
+            db_tool: DatabaseQueryTool instance for executing queries
+        """
+        self.db_tool = db_tool
+    
+    def get_incidents(self, service_name: str = None) -> ToolResult:
+        """
+        Get past incidents for a service or all services.
+        
+        Args:
+            service_name: Optional service name to filter by
+            
+        Returns:
+            ToolResult with incident records or error
+        """
+        if service_name:
+            sql = f"SELECT * FROM incidents WHERE service = '{service_name}' ORDER BY occurred_at DESC"
+        else:
+            sql = "SELECT * FROM incidents ORDER BY occurred_at DESC LIMIT 20"
+        
+        return self.db_tool.execute_query(sql)
+    
+    def get_definition(self) -> ToolDefinition:
+        """Get tool definition for LLM."""
+        return ToolDefinition(
+            name="get_incident_history",
+            description="Get past incidents for a service or all services. Returns incident details including severity, date, and root cause.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "service_name": {
+                        "type": "string",
+                        "description": "Optional: filter by service name (e.g., PaymentGW, NotificationSvc)"
+                    }
+                }
+            }
+        )
+
+
+class TeamInfoTool:
+    """Tool for retrieving team information from knowledge base."""
+    
+    def __init__(self, rag_pipeline):
+        """
+        Initialize team info tool.
+        
+        Args:
+            rag_pipeline: RAGPipeline instance for searching documents
+        """
+        self.rag_pipeline = rag_pipeline
+    
+    def get_team_info(self, team_name: str) -> ToolResult:
+        """
+        Get information about a team.
+        
+        Args:
+            team_name: Name of the team (e.g., "Platform", "Commerce")
+            
+        Returns:
+            ToolResult with team information or error
+        """
+        try:
+            # Use RAG pipeline to search for team documents
+            query = f"Information about Team {team_name}"
+            chunks = self.rag_pipeline.retrieve(query, top_k=3)
+            
+            if not chunks:
+                return ToolResult(
+                    success=False,
+                    data=None,
+                    error=f"No information found for Team {team_name}"
+                )
+            
+            # Extract relevant information from chunks
+            team_info = {
+                "team_name": team_name,
+                "chunks": [
+                    {
+                        "text": chunk.text,
+                        "source": chunk.source,
+                        "score": chunk.score
+                    }
+                    for chunk in chunks
+                ]
+            }
+            
+            return ToolResult(success=True, data=team_info)
+            
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                data=None,
+                error=f"Failed to retrieve team info: {str(e)}"
+            )
+    
+    def get_definition(self) -> ToolDefinition:
+        """Get tool definition for LLM."""
+        return ToolDefinition(
+            name="get_team_info",
+            description="Get information about a team including team lead, members, and responsibilities",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "team_name": {
+                        "type": "string",
+                        "description": "Name of the team (e.g., Platform, Commerce, Data)"
+                    }
+                },
+                "required": ["team_name"]
+            }
+        )
+
+
+class CompareServicesTool:
+    """Tool for comparing metrics between multiple services."""
+    
+    def __init__(self, metrics_tool: ServiceMetricsTool):
+        """
+        Initialize compare services tool.
+        
+        Args:
+            metrics_tool: ServiceMetricsTool instance for fetching metrics
+        """
+        self.metrics_tool = metrics_tool
+    
+    def compare_services(self, service_names: List[str], metric: str) -> ToolResult:
+        """
+        Compare a specific metric across multiple services.
+        
+        Args:
+            service_names: List of service names to compare
+            metric: Metric to compare (e.g., 'latency_p99_ms', 'error_rate')
+            
+        Returns:
+            ToolResult with comparison data or error
+        """
+        try:
+            results = {}
+            errors = []
+            
+            for service in service_names:
+                metrics_result = self.metrics_tool.get_metrics(service)
+                if metrics_result.success:
+                    if metric in metrics_result.data:
+                        results[service] = metrics_result.data[metric]
+                    else:
+                        errors.append(f"Metric '{metric}' not found for {service}")
+                else:
+                    errors.append(f"Failed to get metrics for {service}: {metrics_result.error}")
+            
+            if not results and errors:
+                return ToolResult(
+                    success=False,
+                    data=None,
+                    error="; ".join(errors)
+                )
+            
+            comparison_data = {
+                "metric": metric,
+                "services": results
+            }
+            
+            if errors:
+                comparison_data["warnings"] = errors
+            
+            return ToolResult(success=True, data=comparison_data)
+            
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                data=None,
+                error=f"Failed to compare services: {str(e)}"
+            )
+    
+    def get_definition(self) -> ToolDefinition:
+        """Get tool definition for LLM."""
+        return ToolDefinition(
+            name="compare_services",
+            description="Compare a specific metric across multiple services. Useful for identifying performance differences.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "service_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of service names to compare"
+                    },
+                    "metric": {
+                        "type": "string",
+                        "description": "Metric to compare (e.g., latency_p99_ms, error_rate, requests_per_min)"
+                    }
+                },
+                "required": ["service_names", "metric"]
+            }
+        )
+
+
 class ToolExecutor:
     """Orchestrates tool execution."""
     
@@ -220,6 +552,16 @@ class ToolExecutor:
             return tool.execute_query(**parameters)
         elif tool_name == "get_service_metrics":
             return tool.get_metrics(**parameters)
+        elif tool_name == "get_service_status":
+            return tool.get_status(**parameters)
+        elif tool_name == "list_services":
+            return tool.list_services(**parameters)
+        elif tool_name == "get_incident_history":
+            return tool.get_incidents(**parameters)
+        elif tool_name == "get_team_info":
+            return tool.get_team_info(**parameters)
+        elif tool_name == "compare_services":
+            return tool.compare_services(**parameters)
         else:
             return ToolResult(
                 success=False,
