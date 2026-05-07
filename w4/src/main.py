@@ -59,6 +59,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
+@app.on_event("startup")
+async def startup_event():
+    """Launch the observability dashboard (Bonus A) inside the same process."""
+    import asyncio
+    import uvicorn
+    from dashboard import app as dashboard_app
+    
+    # Run dashboard on port 8002 in background
+    config = uvicorn.Config(dashboard_app, host="0.0.0.0", port=8002, log_level="warning")
+    server = uvicorn.Server(config)
+    asyncio.create_task(server.serve())
+    print("✅ Observability Dashboard auto-started on http://localhost:8002")
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
