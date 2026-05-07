@@ -35,7 +35,8 @@ else:
 class QueryRequest(BaseModel):
     """Request model for query endpoint."""
     query: str = Field(..., min_length=1, description="User's question")
-    top_k: Optional[int] = Field(5, ge=1, le=20, description="Number of chunks to retrieve")
+    top_k: Optional[int] = Field(None, ge=1, le=20, description="Number of chunks to retrieve (default: 5 for L1, 10 for L2)")
+    level: Optional[str] = Field("L1", pattern="^(L1|L2)$", description="Query level: L1 (simple RAG) or L2 (multi-source with conflict resolution)")
 
 
 class QueryResponse(BaseModel):
@@ -64,7 +65,7 @@ app.add_middleware(
 # Initialize RAG Pipeline
 # Get configuration from environment variables
 KNOWLEDGE_BASE_ID = os.getenv("BEDROCK_KB_ID")
-MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0")
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
 
 rag_pipeline = RAGPipeline(
     knowledge_base_id=KNOWLEDGE_BASE_ID,
@@ -94,12 +95,12 @@ async def health_check():
 @app.post("/query", response_model=QueryResponse, status_code=status.HTTP_200_OK)
 async def query_endpoint(request: QueryRequest):
     """
-    Query endpoint for L1 (Simple RAG).
+    Query endpoint for L1 (Simple RAG) and L2 (Multi-Source RAG).
     
     Accepts a user query and returns an AI-generated answer with source citations.
     
     Args:
-        request: QueryRequest with query string and optional top_k parameter
+        request: QueryRequest with query string, optional top_k parameter, and optional level parameter
         
     Returns:
         QueryResponse with answer, sources, and processing time
@@ -117,10 +118,17 @@ async def query_endpoint(request: QueryRequest):
                 detail="Knowledge Base is not configured. Please set BEDROCK_KB_ID environment variable."
             )
         
+        # Determine top_k based on level if not explicitly provided
+        top_k = request.top_k
+        if top_k is None:
+            # Default: 5 for L1, 10 for L2
+            top_k = 10 if request.level == "L2" else 5
+        
         # Call RAG pipeline to retrieve and generate response
         response = rag_pipeline.retrieve_and_generate(
             query=request.query,
-            top_k=request.top_k
+            top_k=top_k,
+            level=request.level
         )
         
         # Calculate processing time

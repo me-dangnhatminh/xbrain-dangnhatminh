@@ -29,13 +29,13 @@ class Response:
 class RAGPipeline:
     """Handles retrieval and generation for L1-L2 queries."""
     
-    def __init__(self, knowledge_base_id: str = None, model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"):
+    def __init__(self, knowledge_base_id: str = None, model_id: str = "us.anthropic.claude-3-5-haiku-20241022-v1:0"):
         """
         Initialize RAG pipeline.
         
         Args:
             knowledge_base_id: Bedrock Knowledge Base ID
-            model_id: Bedrock model ID for LLM generation
+            model_id: Bedrock model ID or inference profile ID for LLM generation (default: Claude 3.5 Haiku via cross-region inference profile - cost-effective for RAG)
         """
         self.knowledge_base_id = knowledge_base_id
         self.model_id = model_id
@@ -98,13 +98,14 @@ class RAGPipeline:
         except Exception as e:
             raise RuntimeError(f"Failed to retrieve from Knowledge Base: {str(e)}")
     
-    def retrieve_and_generate(self, query: str, top_k: int = 5) -> Response:
+    def retrieve_and_generate(self, query: str, top_k: int = 5, level: str = "L1") -> Response:
         """
         Retrieve chunks and generate response using LLM.
         
         Args:
             query: User's question
-            top_k: Number of chunks to retrieve
+            top_k: Number of chunks to retrieve (default 5 for L1, 10 for L2)
+            level: Query level - "L1" for simple RAG, "L2" for multi-source with conflict resolution
             
         Returns:
             Response object with answer and source citations
@@ -122,8 +123,11 @@ class RAGPipeline:
         # Step 2: Format chunks into context string with sources
         context = self._format_chunks_as_context(chunks)
         
-        # Step 3: Construct system prompt for L1
-        system_prompt = self._get_l1_system_prompt()
+        # Step 3: Construct system prompt based on level
+        if level == "L2":
+            system_prompt = self._get_l2_system_prompt()
+        else:
+            system_prompt = self._get_l1_system_prompt()
         
         # Step 4: Call Bedrock InvokeModel API with Claude Sonnet
         try:
@@ -200,4 +204,45 @@ Quy tắc quan trọng:
 Ví dụ câu trả lời tốt:
 "Theo team_platform.md, Team Platform lead là Alex Chen."
 "Từ deployment_policy.md, cửa sổ deployment freeze là từ thứ Sáu 18:00 đến thứ Hai 08:00."
+"""
+    
+    def _get_l2_system_prompt(self) -> str:
+        """
+        Get system prompt for L2 (Multi-Source RAG with Conflict Resolution).
+        
+        Returns:
+            System prompt string with conflict resolution rules
+        """
+        return """Bạn là trợ lý AI của GeekBrain, một fintech startup. Nhiệm vụ của bạn là trả lời câu hỏi dựa trên thông tin được cung cấp từ nhiều nguồn trong cơ sở tri thức.
+
+Quy tắc quan trọng:
+1. CHỈ sử dụng thông tin từ các nguồn được cung cấp để trả lời
+2. BẮT BUỘC phải trích dẫn nguồn trong câu trả lời
+3. Trả lời bằng tiếng Việt
+4. Nếu thông tin không có trong các nguồn được cung cấp, hãy nói rõ "Thông tin này không có trong cơ sở tri thức"
+5. Có thể tổng hợp thông tin từ nhiều nguồn khác nhau
+
+QUY TẮC GIẢI QUYẾT XUNG ĐỘT (CONFLICT RESOLUTION):
+Khi nhiều nguồn cung cấp thông tin mâu thuẫn, áp dụng các quy tắc sau theo thứ tự ưu tiên:
+
+1. **Ưu tiên phiên bản cao hơn**: Nếu tài liệu có số phiên bản (v1, v2, v3...), chọn phiên bản cao nhất
+   - Ví dụ: v2 > v1, version 2.1 > version 2.0
+
+2. **Ưu tiên ngày gần nhất**: Nếu tài liệu có ngày cập nhật, chọn tài liệu mới nhất
+   - Ví dụ: 2026-03-01 > 2026-01-15
+
+3. **Ưu tiên trạng thái "current"**: Nếu tài liệu có trạng thái, ưu tiên theo thứ tự:
+   - "current" (hiện tại) > "archived" (lưu trữ) > "superseded" (đã thay thế) > "deprecated" (không dùng nữa)
+
+4. **Giải thích nguồn được tin cậy**: BẮT BUỘC phải giải thích nguồn nào được chọn và tại sao
+   - Nêu rõ thông tin từ nguồn cũ/không còn dùng là gì
+   - Giải thích tại sao chọn nguồn hiện tại
+
+Ví dụ câu trả lời tốt khi có xung đột:
+"Rate limit hiện tại của PaymentGW API là 1000 requests/phút (theo api_reference_v2.md, phiên bản hiện tại). Phiên bản trước đó (v1, đã lưu trữ) quy định là 500 requests/phút."
+
+"Theo deployment_policy.md (cập nhật 2026-03-01), cửa sổ deployment freeze là từ thứ Sáu 18:00 đến thứ Hai 08:00. Chính sách cũ từ tháng 1/2026 quy định là từ thứ Sáu 20:00."
+
+Ví dụ câu trả lời tốt khi tổng hợp nhiều nguồn:
+"Để deploy vào thứ Sáu tối, Team Commerce cần: (1) Approval từ Team Lead (theo deployment_policy.md), (2) Không được deploy trong freeze window 18:00-08:00 (theo deployment_policy.md), và (3) Phải có on-call engineer sẵn sàng (theo incident_response_policy.md)."
 """

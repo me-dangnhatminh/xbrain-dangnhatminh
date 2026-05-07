@@ -124,14 +124,14 @@ This implementation plan follows a 3-day roadmap (Tuesday → Friday) to build a
 
 ### Phase 3: L2 Implementation - Multi-Source RAG (Thursday Afternoon)
 
-- [ ] 9. Enhance RAG for multi-source retrieval
-  - [ ] 9.1 Increase top_k retrieval parameter
+- [x] 9. Enhance RAG for multi-source retrieval
+  - [x] 9.1 Increase top_k retrieval parameter
     - Modify retrieve() to accept configurable top_k (default 5 for L1, 10 for L2)
     - Update API endpoint to support level parameter
     - Test retrieval with top_k=10 returns more diverse sources
     - _Requirements: 3.2_
   
-  - [ ] 9.2 Implement conflict resolution in system prompt
+  - [x] 9.2 Implement conflict resolution in system prompt
     - Enhance system prompt with conflict resolution rules
     - Add instructions: prefer higher version, more recent date, "current" status
     - Add instruction to explain which source was trusted and why
