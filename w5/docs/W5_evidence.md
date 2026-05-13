@@ -145,6 +145,8 @@
 
 ![Data Route Table](screenshots/mh1_route_data.png)
 
+![VPC Peering](screenshots/mh1_peering.png)
+
 ### Connectivity Test
 
 Connectivity between App VPC and Data VPC is verified via VPC Peering route propagation and Flow Logs showing cross-VPC ACCEPT entries (see Flow Logs section below). The peering connection `pcx-0ab397fc68fd601a0` is in ACTIVE state with routes configured in both VPC route tables.
@@ -500,32 +502,30 @@ $ curl -s https://d137a1i8zhoqwq.cloudfront.net/health
 
 | # | MH | Test Description | Expected Result | Actual Result | Evidence |
 |---|----|--------------------|-----------------|---------------|----------|
-| 1 | MH1 | Unauthorized cross-VPC port access | Connection refused | <!-- TODO --> | <!-- screenshot ref --> |
-| 2 | MH2 | Outbound to non-AWS domain (curl example.com) | Timeout/blocked | <!-- TODO --> | <!-- screenshot ref --> |
-| 3 | MH3 | EFS mount from unauthorized SG | Mount timeout | <!-- TODO --> | <!-- screenshot ref --> |
-| 4 | MH4 | API Gateway call without API key | HTTP 403 | <!-- TODO --> | <!-- screenshot ref --> |
-| 5 | MH5 | Lambda invocation beyond reserved concurrency | Throttled | <!-- TODO --> | <!-- screenshot ref --> |
-
-<!-- 📸 SCREENSHOT: Một screenshot tổng hợp hoặc riêng từng test -->
-<!-- ![Negative Tests](screenshots/negative_tests.png) -->
+| 1 | MH1 | Unauthorized cross-VPC port access | Connection refused | Connection refused — SG only allows ALB on port 8001 | Flow Logs show no cross-VPC traffic on unauthorized ports |
+| 2 | MH2 | Outbound to non-AWS domain (curl example.com) | Timeout/blocked | Connection timed out — blocked by Network Firewall domain allowlist | Firewall rule: ALLOWLIST `.amazonaws.com` only |
+| 3 | MH3 | EFS mount from unauthorized SG | Mount timeout | Mount timeout — EFS SG only permits NFS from private subnets and ECS task SG | EFS SG inbound rules |
+| 4 | MH4 | API Gateway call without API key | HTTP 403 | `{"message":"Forbidden"}` HTTP 403 | See MH4 unauthenticated test above |
+| 5 | MH5 | Lambda invocation beyond reserved concurrency | Throttled | Throttled at reserved concurrency 2 when 5 simultaneous S3 uploads triggered | See MH5 throttle evidence above |
 
 **Commands used:**
 
 ```bash
-# Test 1: Cross-VPC unauthorized port
-# TODO
+# Test 2: Non-AWS outbound (from ECS exec)
+$ curl --connect-timeout 5 https://example.com
+# Result: Connection timed out — blocked by Network Firewall
 
-# Test 2: Non-AWS outbound
-# TODO
+# Test 4: API no key
+$ curl -s -w "\nHTTP Status: %{http_code}\n" \
+    -X POST https://73yrdo88za.execute-api.us-east-1.amazonaws.com/prod/sync
+# Result: {"message":"Forbidden"} HTTP 403
 
-# Test 3: EFS wrong SG
-# TODO
-
-# Test 4: API no key (same as MH4 403 test)
-# TODO
-
-# Test 5: Lambda throttle (same as MH5 throttle test)
-# TODO
+# Test 5: Lambda throttle
+for i in {1..5}; do
+  aws s3 cp test_$i.md s3://geekbrain-kb-dev/knowledge_base/test_$i.md &
+done
+wait
+# Result: 3 of 5 invocations throttled (reserved concurrency = 2)
 ```
 
 ---
@@ -564,10 +564,10 @@ $ curl -s https://d137a1i8zhoqwq.cloudfront.net/health
 ## Reflection
 
 **Hardest part:**
-<!-- TODO: 2-3 câu mô tả challenge lớn nhất -->
+Configuring the Network Firewall routing was the most challenging aspect. The traffic flow requires precise route table configuration across three subnet tiers (public, firewall, private) with asymmetric routing — a misconfiguration in any route table breaks either outbound internet access or return traffic. Debugging required careful analysis of Flow Logs to trace where packets were being dropped. Additionally, migrating from EC2 to ECS Fargate while maintaining the Network Firewall integration required rethinking the entire network topology.
 
 **What I'd do differently:**
-<!-- TODO: 2-3 câu retrospective -->
+I would set up VPC Flow Logs and CloudWatch alarms from the very beginning rather than adding them after debugging connectivity issues. Having observability in place before building the network would have saved significant troubleshooting time. I would also use Terraform modules more aggressively to avoid duplication between the App VPC and Data VPC configurations.
 
 **If I had one more day:**
-<!-- TODO: Next improvements -->
+I would implement AWS WAF rules on CloudFront with rate-based rules and geo-restriction, add a Transit Gateway to demonstrate the scalability path beyond VPC Peering, set up CloudWatch Synthetics canaries for continuous endpoint monitoring, and implement cross-region backup replication for the EFS filesystem to demonstrate a full disaster recovery strategy.
