@@ -14,7 +14,7 @@ resource "aws_security_group" "alb_sg" {
   vpc_id      = aws_vpc.app.id
 
   ingress {
-    description = "HTTP from CloudFront VPC Origin (private subnet CIDR)"
+    description = "HTTP from CloudFront VPC Origin"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"

@@ -91,7 +91,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   default_root_object = "index.html"
   web_acl_id          = aws_wafv2_web_acl.cloudfront.arn
-  comment             = "GeekBrain Unified CDN (Frontend + Backend API)"
+  comment             = "GeekBrain CDN — Frontend + Backend via VPC Origin"
 
   # Origin 1: S3 (frontend static assets)
   origin {
