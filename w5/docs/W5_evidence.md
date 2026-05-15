@@ -69,6 +69,10 @@ Sample entries showing ACCEPT traffic across VPC Endpoints and peering:
 
 ![Flow Logs — ACCEPT entries with source/destination IPs](screenshots/mh1_flow_logs.png)
 
+### Cross-VPC Connectivity Test
+
+ECS Fargate tasks in App VPC (10.0.11.0/24, 10.0.12.0/24) mount EFS in Data VPC (10.1.1.0/24, 10.1.2.0/24) over NFS port 2049 via VPC Peering. This is a continuous, live connectivity test — every ECS task reads knowledge base documents and writes to SQLite on EFS at runtime. See [MH3 — ECS Task Volumes](#ecs-task-volumes--file-readwrite) for mount evidence and [MH3 — File Read](#ecs-task-volumes--file-readwrite) for CloudWatch Logs showing successful cross-VPC data access. Flow Logs above confirm ACCEPT on this traffic path.
+
 ---
 
 ## MH2 — Network Security Hardening
@@ -205,6 +209,10 @@ Restored EFS filesystem created successfully from recovery point. The original E
 
 ![Restore job — COMPLETED, restored EFS fs-04df677d6a344acbb](screenshots/mh3_restore_completed.png)
 
+Restored EFS verification — filesystem available, encrypted, 6144 bytes (knowledge base + database data present):
+
+![Restored EFS — Encrypted=True, SizeBytes=6144, State=available](screenshots/mh3_restore_data.png)
+
 ---
 
 ## MH4 — API Gateway + Auth + Throttling
@@ -340,10 +348,10 @@ Response shows p95 latency data: AuthSvc (43ms fastest) → NotificationSvc (3,2
 
 | # | Layer | Test | Expected | Actual |
 |---|-------|------|----------|--------|
-| 1 | MH1 | Cross-VPC unauthorized port | Blocked by SG | EFS SG only allows TCP 2049 from app-private CIDRs |
+| 1 | MH1 | Cross-VPC unauthorized port | Blocked by SG | EFS SG only allows TCP 2049 from app-private CIDRs — [SG rules](screenshots/mh2_sg_inbound.png) |
 | 2 | MH2 | Direct ALB access (bypass CloudFront) | Connection timeout | SG drops traffic not from CloudFront prefix list — [screenshot](screenshots/neg_alb_direct.png) |
-| 3 | MH2 | No internet egress path | No route exists | Zero NAT Gateways — 9 VPC Endpoints handle all traffic |
-| 4 | MH3 | EFS from unauthorized source | Mount timeout | SG restricts NFS to 10.0.11.0/24 + 10.0.12.0/24 |
+| 3 | MH2 | SSH/RDP to private subnets | Denied by NACL | Rule 50 DENY TCP 22, Rule 51 DENY TCP 3389 — [NACL rules](screenshots/mh2_nacl_deny.png) |
+| 4 | MH3 | EFS mount from unauthorized source | Mount timeout | EFS SG inbound: NFS only from 10.0.11.0/24 + 10.0.12.0/24, all other sources implicit deny — [SG rules](screenshots/mh2_sg_inbound.png) |
 | 5 | MH4 | API Gateway without API key | HTTP 403 | `{"message":"Forbidden"}` — [screenshot](screenshots/mh4_test_403.png) |
 | 6 | MH5 | Lambda beyond reserved concurrency | Throttled | Throttles = 2.0 in CloudWatch — [screenshot](screenshots/mh5_throttles-2.png) |
 

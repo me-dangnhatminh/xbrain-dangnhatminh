@@ -21,7 +21,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     """
     Handle S3 event or API Gateway event and trigger KB sync.
 
@@ -167,6 +167,17 @@ def handle_api_gateway(event, context):
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({
                 "message": "Sync attempted",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            })
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error in API Gateway handler: {str(e)}")
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({
+                "message": "Sync endpoint reached",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             })
