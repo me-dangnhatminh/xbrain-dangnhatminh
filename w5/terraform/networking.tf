@@ -40,12 +40,6 @@ resource "aws_subnet" "app_public_b" {
   tags              = { Name = "${var.project_name}-app-public-b" }
 }
 
-resource "aws_subnet" "app_firewall" {
-  vpc_id            = aws_vpc.app.id
-  cidr_block        = "10.0.3.0/24"
-  availability_zone = "${var.aws_region}a"
-  tags              = { Name = "${var.project_name}-app-firewall" }
-}
 
 resource "aws_subnet" "app_private" {
   vpc_id            = aws_vpc.app.id
@@ -70,6 +64,13 @@ resource "aws_subnet" "data_private" {
   tags              = { Name = "${var.project_name}-data-private" }
 }
 
+resource "aws_subnet" "data_private_b" {
+  vpc_id            = aws_vpc.data.id
+  cidr_block        = "10.1.2.0/24"
+  availability_zone = "${var.aws_region}b"
+  tags              = { Name = "${var.project_name}-data-private-b" }
+}
+
 # =============================================================================
 # Internet Gateway & NAT Gateway
 # =============================================================================
@@ -79,29 +80,6 @@ resource "aws_internet_gateway" "app" {
   tags   = { Name = "${var.project_name}-app-igw" }
 }
 
-resource "aws_eip" "nat" {
-  domain = "vpc"
-  tags   = { Name = "${var.project_name}-nat-eip" }
-}
-
-resource "aws_nat_gateway" "app" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.app_public.id
-  tags          = { Name = "${var.project_name}-nat-gw" }
-  depends_on    = [aws_internet_gateway.app]
-}
-
-resource "aws_eip" "nat_b" {
-  domain = "vpc"
-  tags   = { Name = "${var.project_name}-nat-eip-b" }
-}
-
-resource "aws_nat_gateway" "app_b" {
-  allocation_id = aws_eip.nat_b.id
-  subnet_id     = aws_subnet.app_public_b.id
-  tags          = { Name = "${var.project_name}-nat-gw-b" }
-  depends_on    = [aws_internet_gateway.app]
-}
 
 # =============================================================================
 # Route Tables
@@ -127,29 +105,10 @@ resource "aws_route_table_association" "app_public_b" {
   route_table_id = aws_route_table.app_public.id
 }
 
-# Firewall RT: NAT Gateway for outbound (firewall sits between private and NAT)
-resource "aws_route_table" "app_firewall" {
-  vpc_id = aws_vpc.app.id
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.app.id
-  }
-  tags = { Name = "${var.project_name}-app-firewall-rt" }
-}
 
-resource "aws_route_table_association" "app_firewall" {
-  subnet_id      = aws_subnet.app_firewall.id
-  route_table_id = aws_route_table.app_firewall.id
-}
-
-# Private RT: Traffic goes through Network Firewall + cross-VPC peering
+# Private RT: cross-VPC peering (no internet route — SG + VPC Endpoints handle all traffic)
 resource "aws_route_table" "app_private" {
   vpc_id = aws_vpc.app.id
-
-  route {
-    cidr_block      = "0.0.0.0/0"
-    vpc_endpoint_id = one([for az, state in aws_networkfirewall_firewall.main.firewall_status[0].sync_states : state.attachment[0].endpoint_id])
-  }
 
   route {
     cidr_block                = "10.1.0.0/16"
@@ -168,11 +127,6 @@ resource "aws_route_table" "app_private_b" {
   vpc_id = aws_vpc.app.id
 
   route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.app_b.id
-  }
-
-  route {
     cidr_block                = "10.1.0.0/16"
     vpc_peering_connection_id = aws_vpc_peering_connection.app_to_data.id
   }
@@ -185,7 +139,6 @@ resource "aws_route_table_association" "app_private_b" {
   route_table_id = aws_route_table.app_private_b.id
 }
 
-# Public RT return route is defined in firewall.tf
 
 # Data VPC RT
 resource "aws_route_table" "data_private" {
@@ -199,6 +152,11 @@ resource "aws_route_table" "data_private" {
 
 resource "aws_route_table_association" "data_private" {
   subnet_id      = aws_subnet.data_private.id
+  route_table_id = aws_route_table.data_private.id
+}
+
+resource "aws_route_table_association" "data_private_b" {
+  subnet_id      = aws_subnet.data_private_b.id
   route_table_id = aws_route_table.data_private.id
 }
 
@@ -327,6 +285,20 @@ resource "aws_vpc_endpoint" "ssm" {
   tags = { Name = "${var.project_name}-vpce-ssm" }
 }
 
+# Interface Endpoint: OpenSearch Serverless (Bedrock KB vector store)
+# AOSS only available in us-east-1b/c/d, not us-east-1a
+resource "aws_vpc_endpoint" "aoss" {
+  vpc_id              = aws_vpc.app.id
+  service_name        = "com.amazonaws.${var.aws_region}.aoss"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true
+
+  subnet_ids         = [aws_subnet.app_private_b.id]
+  security_group_ids = [aws_security_group.vpc_endpoints.id]
+
+  tags = { Name = "${var.project_name}-vpce-aoss" }
+}
+
 # =============================================================================
 # VPC Peering (App VPC <-> Data VPC)
 # =============================================================================
@@ -373,7 +345,12 @@ resource "aws_iam_role_policy" "flow_logs" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogGroups", "logs:DescribeLogStreams"]
-      Resource = "*"
+      Resource = [
+        aws_cloudwatch_log_group.flow_logs_app.arn,
+        aws_cloudwatch_log_group.flow_logs_data.arn,
+        "${aws_cloudwatch_log_group.flow_logs_app.arn}:*",
+        "${aws_cloudwatch_log_group.flow_logs_data.arn}:*"
+      ]
     }]
   })
 }

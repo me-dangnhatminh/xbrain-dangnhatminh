@@ -14,25 +14,17 @@ resource "aws_efs_file_system" "app" {
   }
 }
 
-resource "aws_security_group" "efs" {
-  name        = "${var.project_name}-efs-sg-v2"
-  description = "EFS mount - NFS from app tier only"
+resource "aws_security_group" "efs_sg" {
+  name        = "${var.project_name}-efs-sg-appvpc"
+  description = "EFS mount in App VPC - NFS from ECS tasks"
   vpc_id      = aws_vpc.app.id
 
   ingress {
-    description = "NFS from private subnets"
+    description = "NFS from ECS tasks in private subnets"
     from_port   = 2049
     to_port     = 2049
     protocol    = "tcp"
     cidr_blocks = ["10.0.11.0/24", "10.0.12.0/24"]
-  }
-
-  ingress {
-    description     = "NFS from ECS tasks"
-    from_port       = 2049
-    to_port         = 2049
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_task.id]
   }
 
   tags = { Name = "${var.project_name}-efs-sg" }
@@ -41,13 +33,13 @@ resource "aws_security_group" "efs" {
 resource "aws_efs_mount_target" "app" {
   file_system_id  = aws_efs_file_system.app.id
   subnet_id       = aws_subnet.app_private.id
-  security_groups = [aws_security_group.efs.id]
+  security_groups = [aws_security_group.efs_sg.id]
 }
 
 resource "aws_efs_mount_target" "app_b" {
   file_system_id  = aws_efs_file_system.app.id
   subnet_id       = aws_subnet.app_private_b.id
-  security_groups = [aws_security_group.efs.id]
+  security_groups = [aws_security_group.efs_sg.id]
 }
 
 # Access Point for SQLite database (isolated from knowledge_base)

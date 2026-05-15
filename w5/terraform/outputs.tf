@@ -55,14 +55,6 @@ output "dlq_url" {
   value = aws_sqs_queue.lambda_dlq.url
 }
 
-# --- Firewall ---
-output "network_firewall_id" {
-  value = aws_networkfirewall_firewall.main.arn
-}
-
-output "firewall_alert_log_group" {
-  value = "/aws/network-firewall/${var.project_name}-alerts"
-}
 
 # --- Backup ---
 output "backup_vault_name" {

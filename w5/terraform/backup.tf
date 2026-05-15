@@ -79,21 +79,3 @@ resource "aws_backup_selection" "dynamodb" {
     aws_dynamodb_table.conversations.arn
   ]
 }
-
-# Resource 3: EBS (App EC2 root volume)
-resource "aws_backup_selection" "ebs" {
-  name         = "${var.project_name}-ebs-backup"
-  plan_id      = aws_backup_plan.main.id
-  iam_role_arn = aws_iam_role.backup.arn
-
-  resources = [
-    "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:volume/*"
-  ]
-
-  condition {
-    string_equals {
-      key   = "aws:ResourceTag/Name"
-      value = "${var.project_name}-app-instance"
-    }
-  }
-}

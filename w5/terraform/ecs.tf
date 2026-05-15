@@ -1,4 +1,99 @@
 # =============================================================================
+# Security Groups
+# =============================================================================
+
+# CloudFront managed prefix list
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
+# ALB: accepts HTTP only from CloudFront edge nodes
+resource "aws_security_group" "alb_sg" {
+  name        = "${var.project_name}-alb-sg-appvpc"
+  description = "ALB in App VPC - HTTP from CloudFront only"
+  vpc_id      = aws_vpc.app.id
+
+  ingress {
+    description     = "HTTP from CloudFront edge"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
+  }
+
+  egress {
+    description = "HTTP to ECS tasks in private subnets"
+    from_port   = 8001
+    to_port     = 8001
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.11.0/24", "10.0.12.0/24"]
+  }
+
+  tags = { Name = "${var.project_name}-alb-sg" }
+}
+
+# ECS Tasks: accepts traffic from ALB only
+resource "aws_security_group" "ecs_task_sg" {
+  name        = "${var.project_name}-ecs-task-sg-appvpc"
+  description = "ECS Fargate tasks - traffic from ALB"
+  vpc_id      = aws_vpc.app.id
+
+  ingress {
+    description     = "API from ALB"
+    from_port       = 8001
+    to_port         = 8001
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  # HTTPS to VPC Endpoints (Bedrock, ECR, SSM, CloudWatch Logs)
+  egress {
+    description     = "HTTPS to VPC Endpoints"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.vpc_endpoints.id]
+  }
+
+  # HTTPS to S3/DynamoDB Gateway Endpoints (use prefix lists)
+  egress {
+    description     = "HTTPS to S3 Gateway Endpoint"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    prefix_list_ids = [aws_vpc_endpoint.s3.prefix_list_id]
+  }
+
+  egress {
+    description     = "HTTPS to DynamoDB Gateway Endpoint"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    prefix_list_ids = [aws_vpc_endpoint.dynamodb.prefix_list_id]
+  }
+
+  # NFS to EFS in App VPC private subnets
+  egress {
+    description = "NFS to EFS in App VPC"
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.11.0/24", "10.0.12.0/24"]
+  }
+
+  # Localhost (monitoring API on port 8000 within same task)
+  egress {
+    description = "Localhost monitoring API"
+    from_port   = 8000
+    to_port     = 8000
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.11.0/24", "10.0.12.0/24"]
+  }
+
+  tags = { Name = "${var.project_name}-ecs-task-sg" }
+}
+
+# =============================================================================
 # ECS Fargate: Application Deployment
 # =============================================================================
 
@@ -22,7 +117,7 @@ resource "aws_lb" "app" {
   name               = "${var.project_name}-appvpc-alb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
+  security_groups    = [aws_security_group.alb_sg.id]
   subnets            = [aws_subnet.app_public.id, aws_subnet.app_public_b.id]
   tags               = { Name = "${var.project_name}-alb" }
 }
@@ -101,9 +196,9 @@ resource "aws_ecs_task_definition" "backend" {
   volume {
     name = "efs-database"
     efs_volume_configuration {
-      file_system_id          = aws_efs_file_system.app.id
-      transit_encryption      = "ENABLED"
-      root_directory          = "/"
+      file_system_id     = aws_efs_file_system.app.id
+      transit_encryption = "ENABLED"
+      root_directory     = "/"
       authorization_config {
         access_point_id = aws_efs_access_point.database.id
         iam             = "ENABLED"
@@ -169,7 +264,7 @@ resource "aws_ecs_service" "backend" {
 
   network_configuration {
     subnets          = [aws_subnet.app_private.id, aws_subnet.app_private_b.id]
-    security_groups  = [aws_security_group.ecs_task.id]
+    security_groups  = [aws_security_group.ecs_task_sg.id]
     assign_public_ip = false
   }
 
@@ -245,8 +340,16 @@ resource "aws_iam_role_policy" "ecs_task" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:Retrieve"]
-        Resource = "*"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = [
+          "arn:aws:bedrock:*::foundation-model/*",
+          "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/*"
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:Retrieve"]
+        Resource = aws_bedrockagent_knowledge_base.main.arn
       },
       {
         Effect   = "Allow"

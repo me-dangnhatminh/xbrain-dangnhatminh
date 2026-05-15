@@ -189,6 +189,27 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   alarm_actions = [aws_sns_topic.alerts.arn]
 }
 
+resource "aws_cloudwatch_metric_alarm" "waf_blocked" {
+  alarm_name          = "${var.project_name}-waf-blocked-spike"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "BlockedRequests"
+  namespace           = "AWS/WAFV2"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 100
+  alarm_description   = "WAF blocked > 100 requests in 5 minutes - possible attack"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    WebACL = aws_wafv2_web_acl.cloudfront.name
+    Rule   = "ALL"
+    Region = "us-east-1"
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
 resource "aws_cloudwatch_metric_alarm" "lambda_dlq_messages" {
   alarm_name          = "${var.project_name}-dlq-messages"
   comparison_operator = "GreaterThanThreshold"
