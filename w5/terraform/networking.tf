@@ -300,6 +300,53 @@ resource "aws_vpc_endpoint" "aoss" {
 }
 
 # =============================================================================
+# MH2: NACL — Defense-in-depth for App VPC private subnets
+# =============================================================================
+
+resource "aws_network_acl" "app_private" {
+  vpc_id     = aws_vpc.app.id
+  subnet_ids = [aws_subnet.app_private.id, aws_subnet.app_private_b.id]
+
+  ingress {
+    rule_no    = 50
+    protocol   = "tcp"
+    action     = "deny"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 22
+    to_port    = 22
+  }
+
+  ingress {
+    rule_no    = 51
+    protocol   = "tcp"
+    action     = "deny"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 3389
+    to_port    = 3389
+  }
+
+  ingress {
+    rule_no    = 100
+    protocol   = "-1"
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 0
+  }
+
+  egress {
+    rule_no    = 100
+    protocol   = "-1"
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 0
+  }
+
+  tags = { Name = "${var.project_name}-app-private-nacl" }
+}
+
+# =============================================================================
 # VPC Peering (App VPC <-> Data VPC)
 # =============================================================================
 

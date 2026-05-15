@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|-------|
 | Group | GROUP 5 — XBrain |
-| Members | Dang Nhat Minh |
+| Members | Minh - Quyen- Thuy |
 | Repository | https://github.com/me-dangnhatminh/demo_aws |
 | Prior Week Evidence | [W4: AI Agent with RAG + Tools + Memory](../docs/W4_evidence.md) |
 | Date | 2026-05-15 |
@@ -113,6 +113,18 @@ All 4 Security Groups follow least-privilege. No SG has inbound rules on port 22
 ![Security Groups — descriptions show locked-down access](screenshots/mh2_security_groups.png)
 
 ![EFS SG inbound — NFS (2049) only from App VPC private subnets, no 0.0.0.0/0](screenshots/mh2_sg_inbound.png)
+
+### NACL — Defense-in-Depth on Private Subnets
+
+Custom NACL applied to App VPC private subnets (`10.0.11.0/24`, `10.0.12.0/24`):
+
+| Rule | Action | Protocol | Port | Source | Purpose |
+|------|--------|----------|------|--------|---------|
+| 50 | DENY | TCP | 22 | 0.0.0.0/0 | Block SSH — Fargate has no SSH daemon; prevents lateral movement if SG misconfigured |
+| 51 | DENY | TCP | 3389 | 0.0.0.0/0 | Block RDP — Linux containers, no RDP service |
+| 100 | ALLOW | ALL | ALL | 0.0.0.0/0 | Allow remaining traffic (SGs handle fine-grained filtering) |
+
+![NACL DENY rules — SSH (22) and RDP (3389) explicitly denied on private subnets](screenshots/mh2_nacl_deny.png)
 
 ### Negative Test — Direct ALB Access Blocked
 
