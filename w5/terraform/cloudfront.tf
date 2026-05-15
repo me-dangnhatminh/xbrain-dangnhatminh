@@ -65,33 +65,12 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
   signing_protocol                  = "sigv4"
 }
 
-# CloudFront VPC Origin — connects to internal ALB over AWS private network
-resource "aws_cloudfront_vpc_origin" "alb" {
-  vpc_origin_endpoint_config {
-    name                   = "${var.project_name}-alb-vpc-origin"
-    arn                    = aws_lb.app.arn
-    http_port              = 80
-    https_port             = 443
-    origin_protocol_policy = "http-only"
-
-    origin_ssl_protocols {
-      items    = ["TLSv1.2"]
-      quantity = 1
-    }
-  }
-
-  tags = {
-    Name        = "${var.project_name}-alb-vpc-origin"
-    Environment = var.environment
-  }
-}
-
 # CloudFront Distribution — unified entry point for frontend + backend API
 resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   default_root_object = "index.html"
   web_acl_id          = aws_wafv2_web_acl.cloudfront.arn
-  comment             = "GeekBrain CDN — Frontend + Backend via VPC Origin"
+  comment             = "GeekBrain CDN — Frontend + Backend API"
 
   # Origin 1: S3 (frontend static assets)
   origin {
@@ -100,12 +79,15 @@ resource "aws_cloudfront_distribution" "frontend" {
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
   }
 
-  # Origin 2: ALB (backend API) — via VPC Origin (private network, no public exposure)
+  # Origin 2: ALB (backend API) — internet-facing, SG restricts to CloudFront prefix list
   origin {
     domain_name = aws_lb.app.dns_name
     origin_id   = "alb-backend"
-    vpc_origin_config {
-      vpc_origin_id = aws_cloudfront_vpc_origin.alb.id
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
     }
   }
 

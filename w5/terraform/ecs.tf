@@ -7,18 +7,18 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
   name = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
-# ALB: internal, accessed only via CloudFront VPC Origin
+# ALB: internet-facing, restricted to CloudFront managed prefix list
 resource "aws_security_group" "alb_sg" {
   name        = "${var.project_name}-alb-sg-appvpc"
-  description = "Internal ALB - CloudFront VPC Origin only"
+  description = "ALB in App VPC - HTTP from CloudFront only"
   vpc_id      = aws_vpc.app.id
 
   ingress {
-    description = "HTTP from CloudFront VPC Origin"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
+    description     = "HTTP from CloudFront edge"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
   }
 
   egress {
@@ -115,7 +115,7 @@ resource "aws_ecs_cluster" "main" {
 
 resource "aws_lb" "app" {
   name               = "${var.project_name}-appvpc-alb"
-  internal           = true
+  internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
   subnets            = [aws_subnet.app_public.id, aws_subnet.app_public_b.id]
