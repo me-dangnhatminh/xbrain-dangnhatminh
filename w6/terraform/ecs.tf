@@ -45,13 +45,13 @@ resource "aws_security_group" "ecs_task_sg" {
     security_groups = [aws_security_group.alb_sg.id]
   }
 
-  # HTTPS to VPC Endpoints (Bedrock, ECR, SSM, CloudWatch Logs)
+  # HTTPS outbound — traffic routes via NAT EC2 to internet (Bedrock, ECR, SSM, Logs)
   egress {
-    description     = "HTTPS to VPC Endpoints"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.vpc_endpoints.id]
+    description = "HTTPS to internet via NAT EC2"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # HTTPS to S3/DynamoDB Gateway Endpoints (use prefix lists)
