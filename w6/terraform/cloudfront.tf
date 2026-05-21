@@ -128,7 +128,30 @@ resource "aws_cloudfront_distribution" "frontend" {
     max_ttl     = 0
   }
 
-  # /query* → ALB backend (main query endpoints)
+  # /query/stream → ALB backend (SSE streaming — must NOT buffer)
+  ordered_cache_behavior {
+    path_pattern           = "/query/stream"
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "alb-backend"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = false # CRITICAL: disable gzip compression for SSE
+
+    forwarded_values {
+      query_string = true
+      # Forward all headers needed for SSE to pass through CloudFront without buffering
+      headers = ["Authorization", "Content-Type", "Accept", "Cache-Control", "Accept-Encoding", "Origin", "Host"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 0
+  }
+
+  # /query* → ALB backend (non-streaming query endpoints)
   ordered_cache_behavior {
     path_pattern           = "/query*"
     allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]

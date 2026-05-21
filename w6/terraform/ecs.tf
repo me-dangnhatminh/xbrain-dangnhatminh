@@ -134,7 +134,9 @@ resource "aws_lb_target_group" "backend" {
   target_type = "ip"
 
   health_check {
+    protocol            = "HTTP" # NLB supports HTTP health checks for TCP target groups
     path                = "/health"
+    port                = "8001"
     interval            = 30
     healthy_threshold   = 2
     unhealthy_threshold = 3
