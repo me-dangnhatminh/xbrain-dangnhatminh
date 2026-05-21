@@ -2,27 +2,46 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TF_DIR="$SCRIPT_DIR/../terraform"
+REPO_ROOT="$SCRIPT_DIR/.."
+TF_DIR="$REPO_ROOT/terraform"
+LAMBDA_DIR="$REPO_ROOT/backend/lambda"
 
-echo "=== W5 Network Fortress Deployment ==="
+echo "=== W6 Operations Hardening Deployment ==="
 echo ""
 
+# ── Step 1: Build Lambda ZIPs ──────────────────────────────────────────────
+echo "[1/4] Building Lambda deployment packages..."
+
+cd "$LAMBDA_DIR"
+
+zip -r kb_auto_sync_lambda.zip    kb_auto_sync_lambda.py
+zip    cost_guard_lambda.zip      cost_guard_lambda.py
+zip    security_guard_lambda.zip  security_guard_lambda.py
+
+echo "      ✅ Lambda ZIPs ready"
+echo ""
+
+# ── Step 2: Terraform Init ─────────────────────────────────────────────────
 cd "$TF_DIR"
 
-echo "[1/3] Initializing Terraform..."
-terraform init
+echo "[2/4] Initializing Terraform..."
+terraform init -upgrade
 
 echo ""
-echo "[2/3] Planning..."
+
+# ── Step 3: Plan ───────────────────────────────────────────────────────────
+echo "[3/4] Planning..."
 terraform plan -out=tfplan
 
 echo ""
+
+# ── Step 4: Apply (with confirmation) ─────────────────────────────────────
 read -p "Apply? (yes/no): " CONFIRM
 if [ "$CONFIRM" = "yes" ]; then
-  echo "[3/3] Applying..."
+  echo "[4/4] Applying..."
   terraform apply tfplan
   echo ""
-  echo "=== Deployment Complete ==="
+  echo "=== ✅ W6 Deployment Complete ==="
   echo ""
   terraform output
 else
