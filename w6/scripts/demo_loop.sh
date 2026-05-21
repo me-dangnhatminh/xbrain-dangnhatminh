@@ -92,10 +92,14 @@ pause \
   "Lambda Console: Lambda → geekbrain-cost-guard-dev → Test tab → kết quả có stopped_ec2: [\"$INSTANCE_ID\"]" \
   "costa-05-lambda-invoke-response.png"
 
-echo "Đợi instance chuyển sang terminated..."
-aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID" --region "$REGION" || \
-  aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" --region "$REGION" || true
-echo "   ✅ Instance đã bị stop/terminated"
+echo "Đợi 20 giây để CloudTrail ghi event StopInstances..."
+sleep 20
+
+FINAL_STATE=$(aws ec2 describe-instances \
+  --instance-ids "$INSTANCE_ID" --region "$REGION" \
+  --query "Reservations[0].Instances[0].State.Name" --output text 2>/dev/null || echo "unknown")
+echo "   ✅ Instance final state: $FINAL_STATE (stopped hoặc terminated — cả hai đều OK)"
+echo "   NOTE: Workshop account SCP tự động terminate stopped instances — hành vi bình thường"
 
 pause \
   "EC2 Console: EC2 → Instances → cùng Instance ID $INSTANCE_ID → State=stopped" \
