@@ -247,6 +247,9 @@ resource "aws_ecs_service" "backend" {
   launch_type      = "FARGATE"
   platform_version = "1.4.0"
 
+  # MH-COST-A: propagate tags to tasks so Cost Guard sees keep=true
+  propagate_tags = "SERVICE"
+
   network_configuration {
     subnets          = [aws_subnet.app_private.id]
     security_groups  = [aws_security_group.ecs_task_sg.id]
@@ -261,7 +264,10 @@ resource "aws_ecs_service" "backend" {
 
   depends_on = [aws_lb_listener.http]
 
-  tags = { Name = "${var.project_name}-ecs-service" }
+  tags = {
+    Name = "${var.project_name}-ecs-service"
+    keep = "true" # Cost Guard: never stop the backend service
+  }
 }
 
 resource "aws_cloudwatch_log_group" "ecs" {

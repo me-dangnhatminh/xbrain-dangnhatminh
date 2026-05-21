@@ -43,9 +43,20 @@ section() {
 
 section "PHẦN 1: MH-COST-A — Cost Guard Stop EC2"
 
-echo "[1/3] Tạo EC2 test instance (t3.nano, không có tag keep=true)..."
+echo "[1/3] Lấy AMI Amazon Linux 2023 mới nhất trong region $REGION..."
+AMI_ID=$(aws ec2 describe-images \
+  --region "$REGION" \
+  --owners amazon \
+  --filters \
+    'Name=name,Values=al2023-ami-*-x86_64' \
+    'Name=state,Values=available' \
+  --query 'sort_by(Images, &CreationDate)[-1].ImageId' \
+  --output text)
+echo "   AMI: $AMI_ID"
+
+echo "[2/4] Tạo EC2 test instance (t3.nano, không có tag keep=true)..."
 INSTANCE_ID=$(aws ec2 run-instances \
-  --image-id "ami-0c02fb55956c7d316" \
+  --image-id "$AMI_ID" \
   --instance-type "t3.nano" \
   --count 1 \
   --region "$REGION" \
@@ -64,7 +75,7 @@ pause \
   "EC2 Console: EC2 → Instances → filter Name=test-cost-guard-demo → State=running" \
   "costa-04-ec2-running-BEFORE.png"
 
-echo "[3/3] Invoke Cost Guard Lambda..."
+echo "[4/4] Invoke Cost Guard Lambda..."
 aws lambda invoke \
   --function-name "$COST_GUARD_FN" \
   --region "$REGION" \
@@ -81,9 +92,10 @@ pause \
   "Lambda Console: Lambda → geekbrain-cost-guard-dev → Test tab → kết quả có stopped_ec2: [\"$INSTANCE_ID\"]" \
   "costa-05-lambda-invoke-response.png"
 
-echo "Đợi instance chuyển sang stopped..."
-aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" --region "$REGION"
-echo "   ✅ Instance đã STOPPED"
+echo "Đợi instance chuyển sang terminated..."
+aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID" --region "$REGION" || \
+  aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" --region "$REGION" || true
+echo "   ✅ Instance đã bị stop/terminated"
 
 pause \
   "EC2 Console: EC2 → Instances → cùng Instance ID $INSTANCE_ID → State=stopped" \
@@ -97,8 +109,18 @@ echo "Lấy CloudTrail event StopInstances..."
 aws cloudtrail lookup-events \
   --region "$REGION" \
   --lookup-attributes AttributeKey=EventName,AttributeValue=StopInstances \
-  --max-results 1 \
-  --query "Events[0].{EventName:EventName,EventTime:EventTime,Resources:Resources}" \
+  --max-results 3 \
+  --query "Events[*].{EventName:EventName,EventTime:EventTime,Username:Username}" \
+  --output table
+
+# Cũng thử TerminateInstances nếu StopInstances không có
+echo ""
+echo "[Cũng kiểm tra TerminateInstances:]"
+aws cloudtrail lookup-events \
+  --region "$REGION" \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=TerminateInstances \
+  --max-results 3 \
+  --query "Events[*].{EventName:EventName,EventTime:EventTime}" \
   --output table
 
 pause \
