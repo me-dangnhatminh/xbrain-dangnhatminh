@@ -28,11 +28,7 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks = [aws_vpc.app.cidr_block]
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-alb-sg"
-  }
+  tags = { Name = "${var.project_name}-alb-sg" }
 }
 
 # ECS Tasks: accepts traffic from ALB only
@@ -93,11 +89,7 @@ resource "aws_security_group" "ecs_task_sg" {
     self        = true
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-ecs-task-sg"
-  }
+  tags = { Name = "${var.project_name}-ecs-task-sg" }
 }
 
 # =============================================================================
@@ -109,21 +101,13 @@ resource "aws_ecr_repository" "backend" {
   image_tag_mutability = "MUTABLE"
   force_delete         = true
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-ecr"
-  }
+  tags = { Name = "${var.project_name}-ecr" }
 }
 
 resource "aws_ecs_cluster" "main" {
   name = var.project_name
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-ecs-cluster"
-  }
+  tags = { Name = "${var.project_name}-ecs-cluster" }
 }
 
 # =============================================================================
@@ -136,14 +120,10 @@ resource "aws_lb" "app" {
   load_balancer_type = "network"
   security_groups    = [aws_security_group.alb_sg.id]
 
-  subnets = [aws_subnet.app_public.id]
+  subnets    = [aws_subnet.app_public.id]
   depends_on = [aws_internet_gateway.app]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-alb"
-  }
+  tags = { Name = "${var.project_name}-alb" }
 }
 
 resource "aws_lb_target_group" "backend" {
@@ -160,11 +140,7 @@ resource "aws_lb_target_group" "backend" {
     unhealthy_threshold = 3
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-tg"
-  }
+  tags = { Name = "${var.project_name}-tg" }
 }
 
 resource "aws_lb_listener" "http" {
@@ -256,11 +232,7 @@ resource "aws_ecs_task_definition" "backend" {
     essential = true
   }])
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-task-def"
-  }
+  tags = { Name = "${var.project_name}-task-def" }
 }
 
 # =============================================================================
@@ -289,22 +261,14 @@ resource "aws_ecs_service" "backend" {
 
   depends_on = [aws_lb_listener.http]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-ecs-service"
-  }
+  tags = { Name = "${var.project_name}-ecs-service" }
 }
 
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/${var.project_name}-backend"
   retention_in_days = 7
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-ecs-logs"
-  }
+  tags = { Name = "${var.project_name}-ecs-logs" }
 }
 
 # =============================================================================
@@ -322,11 +286,7 @@ resource "aws_iam_role" "ecs_execution" {
     }]
   })
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-ecs-exec-role"
-  }
+  tags = { Name = "${var.project_name}-ecs-exec-role" }
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_execution" {
@@ -362,11 +322,7 @@ resource "aws_iam_role" "ecs_task" {
     }]
   })
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-ecs-task-role"
-  }
+  tags = { Name = "${var.project_name}-ecs-task-role" }
 }
 
 resource "aws_iam_role_policy" "ecs_task" {
@@ -378,7 +334,7 @@ resource "aws_iam_role_policy" "ecs_task" {
       {
         Effect = "Allow"
         Action = [
-          "bedrock:InvokeModel", 
+          "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream",
           "aws-marketplace:ViewSubscriptions",
           "aws-marketplace:Subscribe",

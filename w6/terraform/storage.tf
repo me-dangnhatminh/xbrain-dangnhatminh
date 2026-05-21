@@ -23,9 +23,5 @@ resource "aws_dynamodb_table" "conversations" {
     enabled        = true
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-conversations"
-  }
+  tags = { Name = "${var.project_name}-conversations" }
 }

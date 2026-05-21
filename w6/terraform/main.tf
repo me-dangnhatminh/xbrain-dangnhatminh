@@ -19,7 +19,9 @@ provider "aws" {
     tags = {
       Project     = var.project_name
       Environment = var.environment
-      ManagedBy   = "Terraform"
+      CostCenter  = var.cost_center
+      Owner       = var.owner
+      Application = var.project_name
     }
   }
 }

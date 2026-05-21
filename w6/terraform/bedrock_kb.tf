@@ -5,11 +5,7 @@
 resource "aws_s3_bucket" "knowledge_base" {
   bucket = "${var.project_name}-kb-${var.environment}"
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-kb"
-  }
+  tags = { Name = "${var.project_name}-kb" }
 }
 
 resource "aws_s3_bucket_versioning" "knowledge_base" {
@@ -108,11 +104,7 @@ resource "aws_opensearchserverless_collection" "kb" {
     aws_opensearchserverless_access_policy.kb_access
   ]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-kb-collection"
-  }
+  tags = { Name = "${var.project_name}-kb-collection" }
 }
 
 # --- IAM Role for Bedrock KB ---
@@ -211,11 +203,7 @@ resource "aws_bedrockagent_knowledge_base" "main" {
 
   depends_on = [null_resource.create_oss_index]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-kb"
-  }
+  tags = { Name = "${var.project_name}-kb" }
 }
 
 # --- Data Source (S3 bucket) ---
@@ -242,11 +230,7 @@ resource "aws_ssm_parameter" "bedrock_kb_id" {
   type      = "String"
   value     = aws_bedrockagent_knowledge_base.main.id
   overwrite = true
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-kb-id"
-  }
+  tags      = { Name = "${var.project_name}-kb-id" }
 }
 
 resource "aws_ssm_parameter" "bedrock_ds_id" {
@@ -254,11 +238,7 @@ resource "aws_ssm_parameter" "bedrock_ds_id" {
   type      = "String"
   value     = aws_bedrockagent_data_source.s3.data_source_id
   overwrite = true
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-ds-id"
-  }
+  tags      = { Name = "${var.project_name}-ds-id" }
 }
 
 resource "aws_ssm_parameter" "bedrock_model_id" {
@@ -266,11 +246,7 @@ resource "aws_ssm_parameter" "bedrock_model_id" {
   type      = "String"
   value     = "us.anthropic.claude-sonnet-4-20250514-v1:0"
   overwrite = true
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-model-id"
-  }
+  tags      = { Name = "${var.project_name}-model-id" }
 }
 
 resource "aws_ssm_parameter" "dynamodb_table" {
@@ -278,11 +254,7 @@ resource "aws_ssm_parameter" "dynamodb_table" {
   type      = "String"
   value     = aws_dynamodb_table.conversations.name
   overwrite = true
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-dynamodb-table"
-  }
+  tags      = { Name = "${var.project_name}-dynamodb-table" }
 }
 
 # --- Trigger initial ingestion ---

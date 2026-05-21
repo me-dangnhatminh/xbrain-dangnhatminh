@@ -4,11 +4,7 @@ resource "aws_efs_file_system" "app" {
   performance_mode = "generalPurpose"
   throughput_mode  = "bursting"
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-efs"
-  }
+  tags = { Name = "${var.project_name}-efs" }
 }
 
 resource "aws_security_group" "efs_sg" {
@@ -32,11 +28,7 @@ resource "aws_security_group" "efs_sg" {
     cidr_blocks = [aws_vpc.app.cidr_block]
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-efs-sg"
-  }
+  tags = { Name = "${var.project_name}-efs-sg" }
 }
 
 resource "aws_efs_mount_target" "data" {
@@ -56,12 +48,7 @@ resource "aws_route53_zone" "efs_cross_vpc" {
     ignore_changes = [vpc]
   }
 
-  # SỬA: Bổ sung các Tag bị thiếu
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-efs-phz"
-  }
+  tags = { Name = "${var.project_name}-efs-phz" }
 }
 
 resource "aws_route53_record" "efs_az_a" {
@@ -91,9 +78,5 @@ resource "aws_efs_access_point" "database" {
     }
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-efs-ap-database"
-  }
+  tags = { Name = "${var.project_name}-efs-ap-database" }
 }

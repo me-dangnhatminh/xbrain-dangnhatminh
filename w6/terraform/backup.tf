@@ -5,11 +5,7 @@
 resource "aws_backup_vault" "main" {
   name = "${var.project_name}-backup-vault"
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-backup-vault"
-  }
+  tags = { Name = "${var.project_name}-backup-vault" }
 }
 
 resource "aws_iam_role" "backup" {
@@ -26,11 +22,7 @@ resource "aws_iam_role" "backup" {
     }]
   })
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-backup-role"
-  }
+  tags = { Name = "${var.project_name}-backup-role" }
 }
 
 resource "aws_iam_role_policy_attachment" "backup" {
@@ -56,11 +48,7 @@ resource "aws_backup_plan" "main" {
     }
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-backup-plan"
-  }
+  tags = { Name = "${var.project_name}-backup-plan" }
 }
 
 # Resource 1: EFS

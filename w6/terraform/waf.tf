@@ -109,9 +109,5 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     metric_name                = "${var.project_name}-waf"
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-waf"
-  }
+  tags = { Name = "${var.project_name}-waf" }
 }

@@ -9,11 +9,7 @@ resource "aws_vpc" "app" {
   enable_dns_support   = true
   enable_dns_hostnames = true
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-app-vpc"
-  }
+  tags = { Name = "${var.project_name}-app-vpc" }
 }
 
 resource "aws_vpc" "data" {
@@ -21,11 +17,7 @@ resource "aws_vpc" "data" {
   enable_dns_support   = true
   enable_dns_hostnames = true
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-data-vpc"
-  }
+  tags = { Name = "${var.project_name}-data-vpc" }
 }
 
 # =============================================================================
@@ -36,11 +28,7 @@ resource "aws_subnet" "app_public" {
   vpc_id            = aws_vpc.app.id
   cidr_block        = "10.0.1.0/24"
   availability_zone = "${var.aws_region}a"
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-app-public"
-  }
+  tags              = { Name = "${var.project_name}-app-public" }
 }
 
 
@@ -49,11 +37,7 @@ resource "aws_subnet" "app_private" {
   vpc_id            = aws_vpc.app.id
   cidr_block        = "10.0.11.0/24"
   availability_zone = "${var.aws_region}a"
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-app-private"
-  }
+  tags              = { Name = "${var.project_name}-app-private" }
 }
 
 # --- Data VPC Subnet ---
@@ -61,11 +45,7 @@ resource "aws_subnet" "data_private" {
   vpc_id            = aws_vpc.data.id
   cidr_block        = "10.1.1.0/24"
   availability_zone = "${var.aws_region}a"
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-data-private"
-  }
+  tags              = { Name = "${var.project_name}-data-private" }
 }
 
 # =============================================================================
@@ -74,11 +54,7 @@ resource "aws_subnet" "data_private" {
 
 resource "aws_internet_gateway" "app" {
   vpc_id = aws_vpc.app.id
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-igw"
-  }
+  tags   = { Name = "${var.project_name}-igw" }
 }
 
 resource "aws_route_table" "app_public_rt" {
@@ -87,11 +63,7 @@ resource "aws_route_table" "app_public_rt" {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.app.id
   }
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-app-public-rt"
-  }
+  tags = { Name = "${var.project_name}-app-public-rt" }
 }
 
 resource "aws_route_table_association" "app_public" {
@@ -109,11 +81,7 @@ resource "aws_route_table" "app_private" {
     vpc_peering_connection_id = aws_vpc_peering_connection.app_to_data.id
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-app-private-rt"
-  }
+  tags = { Name = "${var.project_name}-app-private-rt" }
 }
 
 resource "aws_route_table_association" "app_private" {
@@ -129,11 +97,7 @@ resource "aws_route_table" "data_private" {
     vpc_peering_connection_id = aws_vpc_peering_connection.app_to_data.id
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-data-private-rt"
-  }
+  tags = { Name = "${var.project_name}-data-private-rt" }
 }
 
 resource "aws_route_table_association" "data_private" {
@@ -159,11 +123,7 @@ resource "aws_security_group" "vpc_endpoints" {
     cidr_blocks = [aws_vpc.app.cidr_block]
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-sg"
-  }
+  tags = { Name = "${var.project_name}-vpce-sg" }
 }
 
 # Gateway Endpoint
@@ -173,11 +133,7 @@ resource "aws_vpc_endpoint" "s3" {
 
   route_table_ids = [aws_route_table.app_private.id]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-s3"
-  }
+  tags = { Name = "${var.project_name}-vpce-s3" }
 }
 
 # Gateway Endpoint: DynamoDB (free, no ENI needed)
@@ -187,11 +143,7 @@ resource "aws_vpc_endpoint" "dynamodb" {
 
   route_table_ids = [aws_route_table.app_private.id]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-dynamodb"
-  }
+  tags = { Name = "${var.project_name}-vpce-dynamodb" }
 }
 
 # Interface Endpoint: Bedrock Runtime (model invocation)
@@ -204,11 +156,7 @@ resource "aws_vpc_endpoint" "bedrock_runtime" {
   subnet_ids         = [aws_subnet.app_private.id]
   security_group_ids = [aws_security_group.vpc_endpoints.id]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-bedrock-runtime"
-  }
+  tags = { Name = "${var.project_name}-vpce-bedrock-runtime" }
 }
 
 # Interface Endpoint: Bedrock Agent Runtime (KB Retrieve)
@@ -221,11 +169,7 @@ resource "aws_vpc_endpoint" "bedrock_agent_runtime" {
   subnet_ids         = [aws_subnet.app_private.id]
   security_group_ids = [aws_security_group.vpc_endpoints.id]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-bedrock-agent-runtime"
-  }
+  tags = { Name = "${var.project_name}-vpce-bedrock-agent-runtime" }
 }
 
 # Interface Endpoint: CloudWatch Logs (for ECS logging)
@@ -238,11 +182,7 @@ resource "aws_vpc_endpoint" "logs" {
   subnet_ids         = [aws_subnet.app_private.id]
   security_group_ids = [aws_security_group.vpc_endpoints.id]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-logs"
-  }
+  tags = { Name = "${var.project_name}-vpce-logs" }
 }
 
 # Interface Endpoint: ECR API (docker pull - image manifests)
@@ -255,11 +195,7 @@ resource "aws_vpc_endpoint" "ecr_api" {
   subnet_ids         = [aws_subnet.app_private.id]
   security_group_ids = [aws_security_group.vpc_endpoints.id]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-ecr-api"
-  }
+  tags = { Name = "${var.project_name}-vpce-ecr-api" }
 }
 
 # Interface Endpoint: ECR Docker (docker pull - image layers)
@@ -272,11 +208,7 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
   subnet_ids         = [aws_subnet.app_private.id]
   security_group_ids = [aws_security_group.vpc_endpoints.id]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-ecr-dkr"
-  }
+  tags = { Name = "${var.project_name}-vpce-ecr-dkr" }
 }
 
 # Interface Endpoint: SSM (ECS execution role reads parameters)
@@ -289,11 +221,7 @@ resource "aws_vpc_endpoint" "ssm" {
   subnet_ids         = [aws_subnet.app_private.id]
   security_group_ids = [aws_security_group.vpc_endpoints.id]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-ssm"
-  }
+  tags = { Name = "${var.project_name}-vpce-ssm" }
 }
 
 # Interface Endpoint: OpenSearch Serverless (Bedrock KB vector store)
@@ -306,11 +234,7 @@ resource "aws_vpc_endpoint" "aoss" {
   subnet_ids         = [aws_subnet.app_private.id]
   security_group_ids = [aws_security_group.vpc_endpoints.id]
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-vpce-aoss"
-  }
+  tags = { Name = "${var.project_name}-vpce-aoss" }
 }
 
 # =============================================================================
@@ -357,11 +281,7 @@ resource "aws_network_acl" "app_private" {
     to_port    = 0
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-app-private-nacl"
-  }
+  tags = { Name = "${var.project_name}-app-private-nacl" }
 }
 
 # =============================================================================
@@ -376,11 +296,7 @@ resource "aws_vpc_peering_connection" "app_to_data" {
   requester { allow_remote_vpc_dns_resolution = true }
   accepter { allow_remote_vpc_dns_resolution = true }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-app-to-data-peering"
-  }
+  tags = { Name = "${var.project_name}-app-to-data-peering" }
 }
 
 # =============================================================================

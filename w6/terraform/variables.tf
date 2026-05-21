@@ -29,3 +29,14 @@ variable "alert_email" {
   default     = "admin@example.com"
 }
 
+variable "cost_center" {
+  description = "Cost Center for the project"
+  type        = string
+  default     = "G5"
+}
+
+variable "owner" {
+  description = "Owner of the project"
+  type        = string
+  default     = "dangnhatminh09032002@gmail.com"
+}

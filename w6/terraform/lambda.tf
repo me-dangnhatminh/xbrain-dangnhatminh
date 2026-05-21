@@ -56,11 +56,7 @@ resource "aws_lambda_function" "kb_auto_sync" {
     }
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-kb-auto-sync"
-  }
+  tags = { Name = "${var.project_name}-kb-auto-sync" }
 }
 
 # S3 trigger: sync KB when documents change
@@ -104,9 +100,5 @@ resource "aws_sqs_queue" "lambda_dlq" {
   name                      = "${var.project_name}-kb-sync-dlq"
   message_retention_seconds = 1209600
   sqs_managed_sse_enabled   = true
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-kb-sync-dlq"
-  }
+  tags                      = { Name = "${var.project_name}-kb-sync-dlq" }
 }

@@ -6,11 +6,7 @@
 
 resource "aws_sns_topic" "alerts" {
   name = "${var.project_name}-alerts"
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-alerts"
-  }
+  tags = { Name = "${var.project_name}-alerts" }
 }
 
 resource "aws_sns_topic_subscription" "email" {

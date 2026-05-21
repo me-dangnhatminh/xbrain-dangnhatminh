@@ -6,11 +6,7 @@ resource "aws_api_gateway_rest_api" "sync" {
   name        = "${var.project_name}-sync-api"
   description = "API Gateway for GeekBrain KB sync Lambda"
   endpoint_configuration { types = ["REGIONAL"] }
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-sync-api"
-  }
+  tags = { Name = "${var.project_name}-sync-api" }
 }
 
 resource "aws_api_gateway_resource" "sync" {
@@ -55,11 +51,7 @@ resource "aws_api_gateway_stage" "prod" {
   rest_api_id   = aws_api_gateway_rest_api.sync.id
   stage_name    = "prod"
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-prod-stage"
-  }
+  tags = { Name = "${var.project_name}-prod-stage" }
 }
 
 resource "aws_api_gateway_api_key" "sync" {

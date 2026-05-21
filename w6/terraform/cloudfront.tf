@@ -5,11 +5,7 @@
 resource "aws_s3_bucket" "frontend" {
   bucket = "${var.project_name}-frontend-${var.environment}"
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-frontend"
-  }
+  tags = { Name = "${var.project_name}-frontend" }
 }
 
 resource "aws_s3_bucket_public_access_block" "frontend" {
@@ -217,11 +213,7 @@ resource "aws_cloudfront_distribution" "frontend" {
     cloudfront_default_certificate = true
   }
 
-  tags = {
-    Project     = "${var.project_name}"
-    Environment = "${var.environment}"
-    Name        = "${var.project_name}-frontend-cdn"
-  }
+  tags = { Name = "${var.project_name}-frontend-cdn" }
 }
 
 # S3 bucket policy to allow CloudFront access
