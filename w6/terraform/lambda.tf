@@ -53,7 +53,7 @@ resource "aws_lambda_function" "kb_auto_sync" {
   runtime                        = "python3.11"
   timeout                        = 60
   reserved_concurrent_executions = 2
-  filename                       = "${path.module}/../backend/lambda/kb_auto_sync_lambda.zip"
+  filename                       = "${path.module}/../lambda/kb_auto_sync_lambda.zip"
 
   environment {
     variables = {

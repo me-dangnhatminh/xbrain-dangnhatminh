@@ -71,7 +71,7 @@ resource "aws_lambda_function" "cost_guard" {
   runtime       = "python3.11"
   timeout       = 120
 
-  filename = "${path.module}/../backend/lambda/cost_guard_lambda.zip"
+  filename = "${path.module}/../lambda/cost_guard_lambda.zip"
 
   tags = { Name = "${var.project_name}-cost-guard" }
 }

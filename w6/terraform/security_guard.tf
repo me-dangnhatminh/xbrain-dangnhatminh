@@ -80,7 +80,7 @@ resource "aws_lambda_function" "security_guard" {
   runtime       = "python3.11"
   timeout       = 120
 
-  filename = "${path.module}/../backend/lambda/security_guard_lambda.zip"
+  filename = "${path.module}/../lambda/security_guard_lambda.zip"
 
   tags = { Name = "${var.project_name}-security-guard" }
 }

@@ -4,7 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR/.."
 TF_DIR="$REPO_ROOT/terraform"
-LAMBDA_DIR="$REPO_ROOT/backend/lambda"
+LAMBDA_DIR="$REPO_ROOT/lambda"
 
 echo "=== W6 Operations Hardening Deployment ==="
 echo ""
