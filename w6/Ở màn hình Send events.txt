@@ -1,0 +1,11 @@
+Ở màn hình Send events, bạn điền thông tin y hệt như sau:
+Event bus: Chọn default (mặc định).
+Event source: Gõ chính xác chữ my.fake.anomaly
+Detail type: Gõ chính xác chữ Cost Anomaly Dectection Alert
+Event detail: Bạn dán đoạn JSON báo động giả này vào:
+json
+{
+  "anomalyId": "TEST-12345",
+  "message": "Day la tin nhan test tu Console!"
+}
+Cuộn xuống cuối và ấn nút màu cam Send. Bạn sẽ thấy thông báo xanh "Successfully sent 1 event".
