@@ -279,7 +279,7 @@ Add a `REFLECTIONS.md` to your repo. Sample prompts:
 - [x] `make test` final score: **25/25 passing**
 - [x] Replace `sample_output/*_example.txt` with real outputs from our account
 - [x] `REFLECTIONS.md` with 2+ answers
-- [ ] At least 3 meaningful commits (init → first command working → final polish)
+- [x] At least 3 meaningful commits (init → first command working → final polish)
 - [x] Replace `g<N>` placeholders throughout README with group 5
 - [x] Add Team section with member names
 - [x] Tag: `git tag w6-sidechallenge-v1 && git push --tags`
