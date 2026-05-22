@@ -154,6 +154,10 @@ The SNS topic has two subscribers:
 
 ![SNS topic subscriptions](screenshots/costa-08-sns-subscriptions.png)
 
+Email subscription confirmed via Gmail:
+
+![SNS email subscription confirmed](screenshots/costa-11-sns-email-subscription-confirmed.png)
+
 **Test SNS publish** — demonstrating the chain by publishing a test message:
 
 ![SNS test publish](screenshots/costa-09-sns-publish-test.png)
@@ -457,4 +461,32 @@ Both remediation paths are in the same Lambda ([security_guard_lambda.py](../lam
 
 Both fire on every invocation (event-driven or scheduled sweep), and both publish custom metrics to `GeekBrain/SecurityGuard` namespace for dashboard visibility.
 
-The CloudTrail evidence for S3 `PutPublicAccessBlock` is shown in Section 5 above. The SG path follows the same pattern: EventBridge detects `AuthorizeSecurityGroupIngress` → Lambda calls `RevokeSecurityGroupIngress` → CloudTrail logs the fix.
+The CloudTrail evidence for S3 `PutPublicAccessBlock` is shown in Section 5 above.
+
+#### Demonstrated Detect → Fix Loop (Security Group — Second Fix)
+
+**Step 1 — Create violation** (add SSH rule open to `0.0.0.0/0` on port 22):
+
+```bash
+aws ec2 authorize-security-group-ingress \
+  --group-id <sg-id> --protocol tcp --port 22 --cidr 0.0.0.0/0
+```
+
+**Step 2 — Lambda fires and revokes the dangerous rule:**
+
+![Security Guard invoke — SG remediation](screenshots/sec-12-sg-lambda-invoke-response.png)
+
+Response shows `"remediated_security_groups": ["sg-..."]` confirming the open rule was revoked.
+
+**Step 3 — After state (rule removed):**
+
+![SG inbound rules AFTER — SSH 0.0.0.0/0 gone](screenshots/sec-13-sg-open-ssh-AFTER.png)
+
+**Step 4 — CloudTrail evidence of `RevokeSecurityGroupIngress` API call by the Security Guard Lambda:**
+
+![CloudTrail RevokeSecurityGroupIngress event](screenshots/sec-14-cloudtrail-revoke-sg-ingress.png)
+
+The CloudTrail event shows:
+- `eventName`: `RevokeSecurityGroupIngress`
+- `userIdentity.arn`: matches the Security Guard Lambda execution role
+- Confirms the SG remediation was performed by automation — completing the second fix loop
