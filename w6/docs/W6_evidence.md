@@ -5,13 +5,17 @@
 | Field | Value |
 |-------|-------|
 | Group | GROUP 5 — XBrain |
-| Members | Dang Nhat Minh |
+| Members | Minh - Quang Vinh - Hoang - Nam - Quyen - Thuy |
 | Repository | https://github.com/me-dangnhatminh/xbrain-dangnhatminh |
 | W5 Evidence Pack | [W5 Evidence](../docs/W5_evidence.md) |
 | Date | 2026-05-22 |
 | Application | GeekBrain AI — Fintech monitoring & incident investigation platform |
 | Stack | ECS Fargate (FastAPI), DynamoDB, Bedrock KB, S3, CloudFront, ALB |
 | IaC | Terraform (all resources) |
+
+### Architecture Diagram
+
+![GeekBrain W6 Architecture](architecture_diagram.drawio.png)
 
 ---
 
