@@ -282,8 +282,8 @@ Add a `REFLECTIONS.md` to your repo. Sample prompts:
 - [ ] At least 3 meaningful commits (init → first command working → final polish)
 - [x] Replace `g<N>` placeholders throughout README with group 5
 - [x] Add Team section with member names
-- [ ] Tag: `git tag w6-sidechallenge-v1 && git push --tags`
-- [ ] Post link in Slack `#w6-sidechallenge` thread:
+- [x] Tag: `git tag w6-sidechallenge-v1 && git push --tags`
+- [x] Post link in Slack `#w6-sidechallenge` thread:
       `G5 — <repo-url> — 25/25 tests passing — implemented: list, cost, terminate, tag, clean`
 
 Reminder: **OPTIONAL and does NOT count toward W6 score.** Recognition is
