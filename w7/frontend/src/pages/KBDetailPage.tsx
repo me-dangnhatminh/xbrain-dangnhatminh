@@ -44,25 +44,15 @@ export default function KBDetailPage() {
       return;
     }
 
-    // Load KB Name
-    const storedKbs = JSON.parse(localStorage.getItem('mock_kbs') || '[]');
-    const currentKb = storedKbs.find((k: any) => k.id === kbId && k.tenantId === tenantId);
-    if (currentKb) {
-      setKbName(currentKb.name);
-    } else {
-      navigate('/knowledge-bases');
-    }
+    // Set Name (For now we just use kbId as name since it's the workspace_id)
+    setKbName(kbId);
 
-    // Load Files
-    const storedFiles = JSON.parse(localStorage.getItem('mock_files') || '[]');
-    setFiles(storedFiles.filter((f: FileRecord) => f.kbId === kbId));
-
-    // Load mock initial message
+    // Initial greeting
     setMessages([
       {
         id: 'msg_0',
         role: 'ai',
-        content: 'Hello! I am ready to answer questions based on the documents in this repository. What would you like to know?',
+        content: 'Xin chào! Tôi đã sẵn sàng trả lời câu hỏi dựa trên tài liệu trong thư mục này. Bạn muốn hỏi gì?',
       }
     ]);
   }, [kbId, navigate]);
@@ -71,26 +61,81 @@ export default function KBDetailPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isThinking]);
 
-  const handleFileUpload = () => {
-    setIsUploading(true);
-    // Simulate upload delay
-    setTimeout(() => {
-      const newFile: FileRecord = {
-        id: `file_${Date.now()}`,
-        name: `Document_${Math.floor(Math.random() * 1000)}.pdf`,
-        kbId: kbId as string,
-      };
-      
-      const allFiles = JSON.parse(localStorage.getItem('mock_files') || '[]');
-      const updatedFiles = [...allFiles, newFile];
-      localStorage.setItem('mock_files', JSON.stringify(updatedFiles));
-      
-      setFiles((prev) => [...prev, newFile]);
-      setIsUploading(false);
-    }, 1000);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUploadTrigger = () => {
+    fileInputRef.current?.click();
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (!apiUrl) {
+        alert("Chưa cấu hình VITE_API_URL");
+        setIsUploading(false);
+        return;
+      }
+
+      // 1. Get Pre-signed URL from Lambda
+      const initRes = await fetch(`${apiUrl}/documents/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: kbId,
+          filename: file.name
+        })
+      });
+      
+      const initData = await initRes.json();
+      
+      if (!initRes.ok) {
+        throw new Error(initData.error || 'Failed to init upload');
+      }
+
+      const { upload_url } = initData;
+
+      // 2. Upload directly to S3
+      const formData = new FormData();
+      // Must append fields in the exact order returned by AWS
+      Object.keys(upload_url.fields).forEach(key => {
+        formData.append(key, upload_url.fields[key]);
+      });
+      formData.append('file', file);
+
+      const s3Res = await fetch(upload_url.url, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!s3Res.ok) {
+        throw new Error('Failed to upload to S3');
+      }
+
+      // Success
+      const newFile: FileRecord = {
+        id: initData.document_id,
+        name: file.name,
+        kbId: kbId as string,
+      };
+      setFiles((prev) => [...prev, newFile]);
+      
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+
+    } catch (error) {
+      console.error("Upload error:", error);
+      alert("Tải lên thất bại. Vui lòng kiểm tra console.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
 
@@ -104,21 +149,44 @@ export default function KBDetailPage() {
     setInputValue('');
     setIsThinking(true);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const availableFiles = JSON.parse(localStorage.getItem('mock_files') || '[]').filter((f: FileRecord) => f.kbId === kbId);
-      const randomFile = availableFiles.length > 0 ? availableFiles[Math.floor(Math.random() * availableFiles.length)].name : undefined;
+    try {
+      const aiUrl = import.meta.env.VITE_AI_BACKEND_URL;
+      if (!aiUrl) throw new Error("Chưa cấu hình VITE_AI_BACKEND_URL");
+
+      const response = await fetch(`${aiUrl}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: userMsg.content,
+          workspace_id: kbId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Lỗi khi gọi AI Backend");
+      }
+
+      const data = await response.json();
 
       const aiMsg: ChatMessage = {
         id: `msg_${Date.now() + 1}`,
         role: 'ai',
-        content: `This is a simulated AI response to your question: "${userMsg.content}". In a real system, this would be generated by analyzing the uploaded documents using RAG (Retrieval-Augmented Generation).`,
-        source: randomFile,
+        content: data.answer,
+        source: data.sources && data.sources.length > 0 ? data.sources.join(', ') : undefined,
       };
 
       setMessages((prev) => [...prev, aiMsg]);
+    } catch (error) {
+      console.error("Chat error:", error);
+      const errorMsg: ChatMessage = {
+        id: `msg_${Date.now() + 1}`,
+        role: 'ai',
+        content: "Xin lỗi, đã có lỗi xảy ra khi kết nối tới AI. Vui lòng thử lại sau.",
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    } finally {
       setIsThinking(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -143,13 +211,20 @@ export default function KBDetailPage() {
           </div>
           
           <div className="p-4">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileChange} 
+              className="hidden" 
+              accept=".pdf,.docx"
+            />
             <Button 
               className="w-full bg-slate-900 text-white hover:bg-slate-800" 
-              onClick={handleFileUpload}
+              onClick={handleFileUploadTrigger}
               disabled={isUploading}
             >
               {isUploading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
-              {isUploading ? 'Uploading...' : '+ Upload File'}
+              {isUploading ? 'Đang lấy URL & Upload...' : '+ Upload File'}
             </Button>
             <p className="text-[10px] text-center text-slate-500 mt-2">Accepts .pdf, .docx</p>
           </div>

@@ -29,31 +29,65 @@ export default function KnowledgeBasesPage() {
     }
     setTenantId(currentTenant);
 
-    const storedKbs = localStorage.getItem('mock_kbs');
-    if (storedKbs) {
-      setKbs(JSON.parse(storedKbs).filter((kb: KnowledgeBase) => kb.tenantId === currentTenant));
-    }
+    const fetchWorkspaces = async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL;
+        if (!apiUrl) return; // Không gọi nếu chưa cấu hình
+        
+        const response = await fetch(`${apiUrl}/workspaces`);
+        if (response.ok) {
+          const data = await response.json();
+          const tenantKbs = data.workspaces
+            .filter((ws: any) => ws.tenant_name === currentTenant)
+            .map((ws: any) => ({
+              id: ws.workspace_id,
+              name: ws.workspace_id,
+              createdAt: new Date(ws.created_at).toLocaleDateString('en-GB'),
+              tenantId: ws.tenant_name,
+            }));
+          setKbs(tenantKbs);
+        }
+      } catch (error) {
+        console.error('Lỗi khi tải danh sách workspace:', error);
+      }
+    };
+    
+    fetchWorkspaces();
   }, [navigate]);
 
-  const handleCreateKb = (e: React.FormEvent) => {
+  const handleCreateKb = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKbName.trim() || !tenantId) return;
-
-    const newKb: KnowledgeBase = {
-      id: `kb_${Date.now()}`,
-      name: newKbName.trim(),
-      createdAt: new Date().toLocaleDateString('en-GB'), // DD/MM/YYYY
-      tenantId,
-    };
-
-    const allStoredKbs = JSON.parse(localStorage.getItem('mock_kbs') || '[]');
-    const updatedAllKbs = [...allStoredKbs, newKb];
     
-    localStorage.setItem('mock_kbs', JSON.stringify(updatedAllKbs));
-    setKbs((prev) => [...prev, newKb]);
-    
-    setNewKbName('');
-    setIsDialogOpen(false);
+    const sanitizedId = newKbName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-');
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (apiUrl) {
+        await fetch(`${apiUrl}/workspaces`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workspace_id: sanitizedId,
+            tenant_name: tenantId
+          })
+        });
+      }
+      
+      // Update local state (Optimistic Update)
+      const newKb: KnowledgeBase = {
+        id: sanitizedId,
+        name: sanitizedId,
+        createdAt: new Date().toLocaleDateString('en-GB'),
+        tenantId,
+      };
+      
+      setKbs((prev) => [...prev, newKb]);
+      setNewKbName('');
+      setIsDialogOpen(false);
+    } catch (error) {
+      console.error('Lỗi khi tạo workspace:', error);
+    }
   };
 
   if (!tenantId) return null;
