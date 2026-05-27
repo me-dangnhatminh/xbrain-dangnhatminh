@@ -49,8 +49,8 @@ resource "aws_lambda_function" "event_handler" {
     variables = {
       DOCUMENT_TABLE = aws_dynamodb_table.documents.name
       S3_BUCKET      = aws_s3_bucket.dochub_data.id
-      BEDROCK_KB_ID  = "" # Điền sau khi tạo KB trên Console
-      BEDROCK_DS_ID  = "" # Điền sau khi tạo Data Source trên Console
+      BEDROCK_KB_ID  = aws_bedrockagent_knowledge_base.dochub_kb.id
+      BEDROCK_DS_ID  = aws_bedrockagent_data_source.dochub_ds.data_source_id
     }
   }
 }

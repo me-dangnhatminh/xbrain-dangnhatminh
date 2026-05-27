@@ -1,12 +1,18 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import os
 
 from src.rag_pipeline import RAGPipeline
 from src.config import Config
 
 app = FastAPI(title="AI Backend", version="1.0.0")
+
+# Khởi tạo 1 lần duy nhất khi app start (tránh tạo boto3 client mỗi request)
+pipeline = RAGPipeline(
+    knowledge_base_id=Config.BEDROCK_KB_ID,
+    model_id=Config.BEDROCK_MODEL_ID
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,11 +31,6 @@ def health_check():
 
 @app.post("/chat")
 def chat_with_docs(request: ChatRequest):
-    pipeline = RAGPipeline(
-        knowledge_base_id=Config.BEDROCK_KB_ID,
-        model_id = Config.BEDROCK_MODEL_ID
-    )
-    
     try:
         response = pipeline.retrieve_and_generate(
             query=request.query, 

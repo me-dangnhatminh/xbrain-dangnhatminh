@@ -55,6 +55,28 @@ export default function KBDetailPage() {
         content: 'Xin chào! Tôi đã sẵn sàng trả lời câu hỏi dựa trên tài liệu trong thư mục này. Bạn muốn hỏi gì?',
       }
     ]);
+
+    // Fetch existing documents
+    const fetchDocuments = async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL;
+        if (!apiUrl) return;
+        
+        const res = await fetch(`${apiUrl}/documents?workspace_id=${kbId}`);
+        if (res.ok) {
+          const data = await res.json();
+          const fetchedFiles = data.documents.map((d: any) => ({
+            id: d.document_id,
+            name: d.filename,
+            kbId: kbId as string
+          }));
+          setFiles(fetchedFiles);
+        }
+      } catch (err) {
+        console.error("Failed to load documents", err);
+      }
+    };
+    fetchDocuments();
   }, [kbId, navigate]);
 
   useEffect(() => {
@@ -150,8 +172,8 @@ export default function KBDetailPage() {
     setIsThinking(true);
 
     try {
-      const aiUrl = import.meta.env.VITE_AI_BACKEND_URL;
-      if (!aiUrl) throw new Error("Chưa cấu hình VITE_AI_BACKEND_URL");
+      const aiUrl = import.meta.env.VITE_API_URL;
+      if (!aiUrl) throw new Error("Chưa cấu hình VITE_API_URL");
 
       const response = await fetch(`${aiUrl}/chat`, {
         method: 'POST',

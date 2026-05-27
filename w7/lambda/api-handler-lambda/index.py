@@ -41,6 +41,8 @@ def handler(event, context):
             return create_workspace(get_body(event))
         elif path == '/documents/upload' and method == 'POST':
             return init_document_upload(get_body(event))
+        elif path == '/documents' and method == 'GET':
+            return get_documents(event)
         else:
             return create_response(404, {"error": "Not Found"})
     except Exception as e:
@@ -68,6 +70,21 @@ def create_workspace(body):
     }
     table.put_item(Item=item)
     return create_response(201, {"message": "Workspace created", "workspace": item})
+
+def get_documents(event):
+    query_params = event.get('queryStringParameters') or {}
+    workspace_id = query_params.get('workspace_id')
+    
+    if not workspace_id:
+        return create_response(400, {"error": "workspace_id is required"})
+        
+    table = dynamodb.Table(DOCUMENT_TABLE)
+    # Using scan with filter for simplicity (Hackathon scale). In production, use GSI on workspace_id.
+    from boto3.dynamodb.conditions import Attr
+    response = table.scan(
+        FilterExpression=Attr('workspace_id').eq(workspace_id)
+    )
+    return create_response(200, {"documents": response.get('Items', [])})
 
 def init_document_upload(body):
     workspace_id = body.get('workspace_id')

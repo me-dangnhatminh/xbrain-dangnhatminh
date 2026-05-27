@@ -45,18 +45,18 @@ def handle_s3_upload(record):
     if len(parts) >= 3:
         document_id = parts[1]
         
-        # Update DynamoDB status to INDEXING
+        # Update DynamoDB status to READY (Hackathon workaround: Bedrock doesn't emit EventBridge events)
         dynamodb.update_item(
             TableName=DOCUMENT_TABLE,
             Key={'document_id': {'S': document_id}},
             UpdateExpression='SET #status = :s, updated_at = :u',
             ExpressionAttributeNames={'#status': 'status'},
             ExpressionAttributeValues={
-                ':s': {'S': 'INDEXING'},
+                ':s': {'S': 'READY'},
                 ':u': {'S': datetime.utcnow().isoformat()}
             }
         )
-        print(f"Updated document {document_id} to INDEXING")
+        print(f"Updated document {document_id} to READY")
 
         # Trigger Bedrock Knowledge Base Ingestion Job
         try:

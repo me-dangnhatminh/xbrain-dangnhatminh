@@ -70,7 +70,7 @@ resource "aws_iam_role" "lambda_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = ["lambda.amazonaws.com", "ecs-tasks.amazonaws.com"]
         }
       }
     ]
@@ -128,6 +128,11 @@ resource "aws_iam_policy" "lambda_app_policy" {
 resource "aws_iam_role_policy_attachment" "lambda_app_attach" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = aws_iam_policy.lambda_app_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_ecs_exec_attach" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
 # --- Role cho ECS Task (AI Backend) ---
