@@ -15,12 +15,13 @@ BEDROCK_DS_ID = os.environ.get('BEDROCK_DS_ID')
 def handler(event, context):
     print("Event Handler Received:", json.dumps(event))
     
-    # 1. Handle S3 ObjectCreated Event
+    # 1. Handle S3 ObjectCreated and ObjectRemoved Events
     if 'Records' in event and len(event['Records']) > 0:
         record = event['Records'][0]
-        if record.get('eventSource') == 'aws:s3' and 'ObjectCreated' in record.get('eventName', ''):
-            handle_s3_upload(record)
-            return {"statusCode": 200, "body": "S3 Event Processed"}
+        event_name = record.get('eventName', '')
+        if record.get('eventSource') == 'aws:s3' and ('ObjectCreated' in event_name or 'ObjectRemoved' in event_name):
+            handle_s3_event(record)
+            return {"statusCode": 200, "body": f"S3 Event {event_name} Processed"}
             
     # 2. Handle EventBridge Event (Bedrock ingestion state change — kept as secondary)
     if event.get('source') == 'aws.bedrock' and event.get('detail-type') == 'Knowledge Base Ingestion State Change':
@@ -35,63 +36,68 @@ def handler(event, context):
     return {"statusCode": 200, "body": "Unknown Event, Ignored"}
 
 
-def handle_s3_upload(record):
+def handle_s3_event(record):
     bucket = record['s3']['bucket']['name']
     key = urllib.parse.unquote_plus(record['s3']['object']['key'], encoding='utf-8')
+    event_name = record.get('eventName', '')
     
     if key.endswith('.metadata.json'):
-        print("Ignoring metadata file upload.")
+        print(f"Ignoring metadata file event: {event_name}")
         return
         
-    print(f"File uploaded to S3: s3://{bucket}/{key}")
+    print(f"S3 Event {event_name} for s3://{bucket}/{key}")
     
     # Extract document_id from key (format: workspace_id/document_id/filename)
     parts = key.split('/')
     if len(parts) >= 3:
         document_id = parts[1]
+        is_upload = 'ObjectCreated' in event_name
         
-        # Set status to INDEXING — file uploaded but not yet indexed
-        dynamodb.update_item(
-            TableName=DOCUMENT_TABLE,
-            Key={'document_id': {'S': document_id}},
-            UpdateExpression='SET #status = :s, updated_at = :u',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={
-                ':s': {'S': 'INDEXING'},
-                ':u': {'S': datetime.utcnow().isoformat()}
-            }
-        )
-        print(f"Updated document {document_id} to INDEXING")
+        # Set status to INDEXING only if it's an upload
+        if is_upload:
+            dynamodb.update_item(
+                TableName=DOCUMENT_TABLE,
+                Key={'document_id': {'S': document_id}},
+                UpdateExpression='SET #status = :s, updated_at = :u',
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={
+                    ':s': {'S': 'INDEXING'},
+                    ':u': {'S': datetime.utcnow().isoformat()}
+                }
+            )
+            print(f"Updated document {document_id} to INDEXING")
 
-        # Trigger Bedrock Knowledge Base Ingestion Job
+        # Trigger Bedrock Knowledge Base Ingestion Job for BOTH Upload and Delete
         try:
             response = bedrock_agent.start_ingestion_job(
                 knowledgeBaseId=BEDROCK_KB_ID,
                 dataSourceId=BEDROCK_DS_ID,
-                description=f"Auto-sync for document {document_id}"
+                description=f"Auto-sync for document {document_id} ({event_name})"
             )
             job_id = response['ingestionJob']['ingestionJobId']
             print(f"Started Bedrock Ingestion Job: {job_id}")
             
-            dynamodb.update_item(
-                TableName=DOCUMENT_TABLE,
-                Key={'document_id': {'S': document_id}},
-                UpdateExpression='SET ingestion_job_id = :j',
-                ExpressionAttributeValues={':j': {'S': job_id}}
-            )
+            if is_upload:
+                dynamodb.update_item(
+                    TableName=DOCUMENT_TABLE,
+                    Key={'document_id': {'S': document_id}},
+                    UpdateExpression='SET ingestion_job_id = :j',
+                    ExpressionAttributeValues={':j': {'S': job_id}}
+                )
         except Exception as e:
             print(f"Failed to start Bedrock Ingestion: {str(e)}")
-            dynamodb.update_item(
-                TableName=DOCUMENT_TABLE,
-                Key={'document_id': {'S': document_id}},
-                UpdateExpression='SET #status = :s, updated_at = :u, error_message = :e',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':s': {'S': 'ERROR'},
-                    ':u': {'S': datetime.utcnow().isoformat()},
-                    ':e': {'S': str(e)}
-                }
-            )
+            if is_upload:
+                dynamodb.update_item(
+                    TableName=DOCUMENT_TABLE,
+                    Key={'document_id': {'S': document_id}},
+                    UpdateExpression='SET #status = :s, updated_at = :u, error_message = :e',
+                    ExpressionAttributeNames={'#status': 'status'},
+                    ExpressionAttributeValues={
+                        ':s': {'S': 'ERROR'},
+                        ':u': {'S': datetime.utcnow().isoformat()},
+                        ':e': {'S': str(e)}
+                    }
+                )
 
 
 def poll_indexing_documents():

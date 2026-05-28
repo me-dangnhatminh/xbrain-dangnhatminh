@@ -16,7 +16,7 @@ resource "aws_s3_bucket_notification" "app_data_notification" {
 
   lambda_function {
     lambda_function_arn = aws_lambda_function.event_handler.arn
-    events              = ["s3:ObjectCreated:*"]
+    events              = ["s3:ObjectCreated:*", "s3:ObjectRemoved:*"]
   }
 
   depends_on = [aws_lambda_permission.s3_invoke_event_handler]

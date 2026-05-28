@@ -116,8 +116,7 @@ resource "aws_cloudwatch_dashboard" "main" {
           view   = "timeSeries"
           region = var.region
           metrics = [
-            ["DocHub/Application", "ChatInvocations",
-            { label = "Queries", stat = "Sum", period = 60, color = "#4CAF50" }]
+            [{ "expression" = "SUM(SEARCH('{DocHub/Application,Workspace} MetricName=\"ChatInvocations\"', 'Sum', 60))", "id" = "q1", "label" = "Total Queries", "color" = "#4CAF50" }]
           ]
           yAxis    = { left = { label = "count", min = 0 } }
           liveData = true
@@ -134,8 +133,7 @@ resource "aws_cloudwatch_dashboard" "main" {
           view   = "timeSeries"
           region = var.region
           metrics = [
-            ["DocHub/Application", "ChatLatency",
-            { label = "Latency (ms)", stat = "Average", period = 60, color = "#2196F3" }]
+            [{ "expression" = "AVG(SEARCH('{DocHub/Application,Workspace} MetricName=\"ChatLatency\"', 'Average', 60))", "id" = "l1", "label" = "Avg Latency (ms)", "color" = "#2196F3" }]
           ]
           yAxis    = { left = { label = "ms", min = 0 } }
           liveData = true
