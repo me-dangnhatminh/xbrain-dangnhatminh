@@ -12,13 +12,11 @@ interface KnowledgeBase {
   id: string;
   name: string;
   createdAt: string;
-  tenantId: string;
 }
 
 export default function KnowledgeBasesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const tenantId = user?.workspaceId ?? null;
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newKbName, setNewKbName] = useState('');
@@ -47,9 +45,8 @@ export default function KnowledgeBasesPage() {
           const data = await response.json();
           const tenantKbs = data.workspaces.map((ws: any) => ({
               id: ws.workspace_id,
-              name: ws.name || ws.tenant_name || ws.workspace_id, // Fallback chain for display name
+              name: ws.name || ws.workspace_id, // Fallback chain for display name
               createdAt: new Date(ws.created_at).toLocaleDateString('en-GB'),
-              tenantId: ws.tenant_id,
             }));
           setKbs(tenantKbs);
         }
@@ -65,7 +62,7 @@ export default function KnowledgeBasesPage() {
 
   const handleCreateKb = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newKbName.trim() || !tenantId || !user) return;
+    if (!newKbName.trim() || !user) return;
 
     setIsCreating(true);
     const sanitizedId = newKbName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -79,7 +76,7 @@ export default function KnowledgeBasesPage() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${user.idToken}`,
           },
-          body: JSON.stringify({ workspace_id: sanitizedId, tenant_name: tenantId }),
+          body: JSON.stringify({ workspace_id: sanitizedId, name: newKbName.trim() }),
         });
       }
 
@@ -87,7 +84,6 @@ export default function KnowledgeBasesPage() {
         id: sanitizedId,
         name: sanitizedId,
         createdAt: new Date().toLocaleDateString('en-GB'),
-        tenantId,
       };
 
       setKbs((prev) => [...prev, newKb]);

@@ -12,7 +12,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from src.auth import get_workspace_id, verify_token
+from src.auth import get_user_id, verify_token
 from src.config import get_config
 from src.logger import setup_logging
 from src.rag_pipeline import RAGPipeline
@@ -53,8 +53,7 @@ pipeline = RAGPipeline(
 # ── Schemas ────────────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="User question")
-    workspace_id: str | None = None
-    # workspace_id is now extracted from the verified JWT — not accepted from client
+    workspace_id: str = Field(..., description="The target workspace ID to search within")
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -72,25 +71,20 @@ def chat_with_docs(
     token_payload: dict = Depends(verify_token),  # 401 if no valid JWT
 ):
     """
-    Query the knowledge base for the authenticated tenant.
+    Query the knowledge base for the authenticated user.
 
     Requires:  Authorization: Bearer <cognito_token>
-    workspace_id is extracted from the JWT (custom:workspace_id or sub).
+    user_id is extracted from the JWT (sub).
     """
-    tenant_id = get_workspace_id(token_payload)
-    requested_workspace_id = getattr(body, 'workspace_id', None)
-    
-    if requested_workspace_id:
-        composite_workspace_id = f"{tenant_id}#{requested_workspace_id}"
-    else:
-        # Fallback to just tenant_id if client didn't send workspace_id (legacy behavior)
-        composite_workspace_id = tenant_id
+    user_id = get_user_id(token_payload)
+    requested_workspace_id = body.workspace_id
+    composite_workspace_id = f"{user_id}#{requested_workspace_id}"
 
     start = time.perf_counter()
     logger.info(
         "chat_request",
         extra={
-            "tenant_id": tenant_id,
+            "user_id": user_id,
             "workspace_id": requested_workspace_id,
             "composite_workspace_id": composite_workspace_id,
             "query_len": len(body.query),
@@ -108,7 +102,7 @@ def chat_with_docs(
         logger.info(
             "chat_response",
             extra={
-                "workspace_id": workspace_id,
+                "composite_workspace_id": composite_workspace_id,
                 "sources_count": len(response.sources),
                 "latency_ms": latency_ms,
             },
@@ -116,7 +110,7 @@ def chat_with_docs(
         return {"answer": response.answer, "sources": response.sources}
 
     except RuntimeError as exc:
-        logger.error("chat_error", extra={"workspace_id": workspace_id}, exc_info=True)
+        logger.error("chat_error", extra={"composite_workspace_id": composite_workspace_id}, exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
     except Exception:

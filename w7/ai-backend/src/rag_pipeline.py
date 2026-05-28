@@ -214,7 +214,7 @@ class RAGPipeline:
 
     def _system_prompt(self) -> str:
         return (
-            "You are DocHub AI, a precise document assistant for a multi-tenant platform.\n\n"
+            "You are DocHub AI, a precise document assistant for a sass platform.\n\n"
             "STRICT RULES:\n"
             "1. Answer ONLY using information from the provided knowledge base excerpts.\n"
             "2. Cite every claim using the format [Source N: filename].\n"

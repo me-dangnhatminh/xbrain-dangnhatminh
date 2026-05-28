@@ -104,17 +104,15 @@ def verify_token(
         raise HTTPException(status_code=401, detail="Authentication failed")
 
 
-def get_workspace_id(payload: dict) -> str:
+def get_user_id(payload: dict) -> str:
     """
-    Extract workspace_id from verified JWT payload.
-
-    Checks 'custom:workspace_id' first, falls back to 'sub' (user ID).
-    Raises HTTPException 401 if neither is present.
+    Extract user_id (sub) from verified JWT payload.
+    Raises HTTPException 401 if not present.
     """
-    workspace_id = payload.get("custom:workspace_id") or payload.get("sub")
-    if not workspace_id:
+    user_id = payload.get("sub")
+    if not user_id:
         raise HTTPException(
             status_code=401,
-            detail="Workspace identity not found in token claims.",
+            detail="User identity not found in token claims.",
         )
-    return workspace_id
+    return user_id

@@ -22,7 +22,6 @@ const userPool = new CognitoUserPool(poolData);
 export interface AuthUser {
   username: string;
   email: string;
-  workspaceId: string;
   idToken: string;
   accessToken: string;
 }
@@ -34,7 +33,6 @@ function sessionToAuthUser(username: string, session: CognitoUserSession): AuthU
   return {
     username,
     email: payload['email'] ?? username,
-    workspaceId: payload['custom:workspace_id'] ?? payload['sub'] ?? '',
     idToken: idToken.getJwtToken(),
     accessToken: session.getAccessToken().getJwtToken(),
   };
