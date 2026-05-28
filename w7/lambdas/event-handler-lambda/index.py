@@ -15,25 +15,30 @@ BEDROCK_DS_ID = os.environ.get('BEDROCK_DS_ID')
 def handler(event, context):
     print("Event Handler Received:", json.dumps(event))
     
-    # 1. Handle S3 ObjectCreated Event (Triggered when user uploads PDF successfully)
+    # 1. Handle S3 ObjectCreated Event
     if 'Records' in event and len(event['Records']) > 0:
         record = event['Records'][0]
         if record.get('eventSource') == 'aws:s3' and 'ObjectCreated' in record.get('eventName', ''):
             handle_s3_upload(record)
             return {"statusCode": 200, "body": "S3 Event Processed"}
             
-    # 2. Handle EventBridge Event (Triggered by Bedrock Knowledge Base Ingestion state change)
+    # 2. Handle EventBridge Event (Bedrock ingestion state change — kept as secondary)
     if event.get('source') == 'aws.bedrock' and event.get('detail-type') == 'Knowledge Base Ingestion State Change':
         handle_bedrock_ingestion_event(event)
         return {"statusCode": 200, "body": "Bedrock Event Processed"}
+
+    # 3. Handle Scheduled Polling (primary mechanism to update INDEXING → READY)
+    if event.get('source') == 'aws.events' or event.get('detail-type') == 'Scheduled Event':
+        poll_indexing_documents()
+        return {"statusCode": 200, "body": "Polling Completed"}
         
     return {"statusCode": 200, "body": "Unknown Event, Ignored"}
+
 
 def handle_s3_upload(record):
     bucket = record['s3']['bucket']['name']
     key = urllib.parse.unquote_plus(record['s3']['object']['key'], encoding='utf-8')
     
-    # Ignore .metadata.json uploads, we only care about the actual files
     if key.endswith('.metadata.json'):
         print("Ignoring metadata file upload.")
         return
@@ -45,7 +50,7 @@ def handle_s3_upload(record):
     if len(parts) >= 3:
         document_id = parts[1]
         
-        # FIX #1: Set status to INDEXING (NOT READY) — file is uploaded but not yet indexed
+        # Set status to INDEXING — file uploaded but not yet indexed
         dynamodb.update_item(
             TableName=DOCUMENT_TABLE,
             Key={'document_id': {'S': document_id}},
@@ -68,7 +73,6 @@ def handle_s3_upload(record):
             job_id = response['ingestionJob']['ingestionJobId']
             print(f"Started Bedrock Ingestion Job: {job_id}")
             
-            # Store job_id in DB for tracking
             dynamodb.update_item(
                 TableName=DOCUMENT_TABLE,
                 Key={'document_id': {'S': document_id}},
@@ -76,7 +80,6 @@ def handle_s3_upload(record):
                 ExpressionAttributeValues={':j': {'S': job_id}}
             )
         except Exception as e:
-            # FIX #2: If ingestion fails, set status to ERROR (don't silently swallow)
             print(f"Failed to start Bedrock Ingestion: {str(e)}")
             dynamodb.update_item(
                 TableName=DOCUMENT_TABLE,
@@ -91,59 +94,103 @@ def handle_s3_upload(record):
             )
 
 
-def handle_bedrock_ingestion_event(event):
-    detail = event.get('detail', {})
-    job_id = detail.get('ingestionJobId')
-    kb_id = detail.get('knowledgeBaseId')
-    status = detail.get('status') # e.g., COMPLETE, FAILED
+def poll_indexing_documents():
+    """
+    Scheduled polling: scan for all INDEXING documents, check their ingestion
+    job status via Bedrock API, and update DynamoDB accordingly.
+    This is the PRIMARY mechanism — does not depend on EventBridge.
+    """
+    print("Polling for INDEXING documents...")
     
-    print(f"Bedrock Ingestion Job {job_id} for KB {kb_id} changed to {status}")
+    response = dynamodb.scan(
+        TableName=DOCUMENT_TABLE,
+        FilterExpression='#status = :s',
+        ExpressionAttributeNames={'#status': 'status'},
+        ExpressionAttributeValues={':s': {'S': 'INDEXING'}}
+    )
     
-    # FIX #3: Only set READY when Bedrock confirms COMPLETE
-    new_status = 'READY' if status == 'COMPLETE' else 'ERROR'
+    items = response.get('Items', [])
+    print(f"Found {len(items)} documents in INDEXING state")
     
-    # Without a GSI on ingestion_job_id, we have to scan (okay for Hackathon scale)
+    if not items:
+        return
+    
+    # Collect unique ingestion job IDs to check
+    jobs_checked = set()
+    
+    for item in items:
+        doc_id = item['document_id']['S']
+        job_id_attr = item.get('ingestion_job_id', {}).get('S')
+        
+        if not job_id_attr:
+            print(f"Document {doc_id} has no ingestion_job_id, skipping")
+            continue
+        
+        # Avoid checking the same job multiple times
+        if job_id_attr in jobs_checked:
+            continue
+        jobs_checked.add(job_id_attr)
+            
+        try:
+            job_response = bedrock_agent.get_ingestion_job(
+                knowledgeBaseId=BEDROCK_KB_ID,
+                dataSourceId=BEDROCK_DS_ID,
+                ingestionJobId=job_id_attr
+            )
+            job_status = job_response['ingestionJob']['status']
+            print(f"Ingestion job {job_id_attr} status: {job_status}")
+            
+            if job_status == 'COMPLETE':
+                _update_docs_by_job_id(job_id_attr, 'READY')
+            elif job_status == 'FAILED':
+                failure_reasons = job_response['ingestionJob'].get('failureReasons', [])
+                error_msg = '; '.join(failure_reasons) if failure_reasons else 'Ingestion failed'
+                _update_docs_by_job_id(job_id_attr, 'ERROR', error_msg)
+            # If still IN_PROGRESS or STARTING, do nothing — next poll will check again
+            
+        except Exception as e:
+            print(f"Failed to check ingestion job {job_id_attr}: {str(e)}")
+
+
+def _update_docs_by_job_id(job_id, new_status, error_msg=None):
+    """Update all documents matching the given ingestion_job_id."""
     response = dynamodb.scan(
         TableName=DOCUMENT_TABLE,
         FilterExpression='ingestion_job_id = :j',
         ExpressionAttributeValues={':j': {'S': job_id}}
     )
     
-    items = response.get('Items', [])
-    for item in items:
+    for item in response.get('Items', []):
         doc_id = item['document_id']['S']
+        update_expr = 'SET #status = :s, updated_at = :u'
+        expr_names = {'#status': 'status'}
+        expr_values = {
+            ':s': {'S': new_status},
+            ':u': {'S': datetime.utcnow().isoformat()}
+        }
+        
+        if error_msg:
+            update_expr += ', error_message = :e'
+            expr_values[':e'] = {'S': error_msg}
+        
         dynamodb.update_item(
             TableName=DOCUMENT_TABLE,
             Key={'document_id': {'S': doc_id}},
-            UpdateExpression='SET #status = :s, updated_at = :u',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={
-                ':s': {'S': new_status},
-                ':u': {'S': datetime.utcnow().isoformat()}
-            }
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_names,
+            ExpressionAttributeValues=expr_values
         )
-        print(f"Updated document {doc_id} to {new_status}")
+        print(f"[Poll] Updated document {doc_id} to {new_status}")
 
-    # FIX #4: If no documents matched by job_id, scan for all INDEXING docs and mark READY
-    # This handles the case where EventBridge doesn't carry job_id or it doesn't match
-    if not items and status == 'COMPLETE':
-        print("No docs matched by job_id, falling back to marking all INDEXING docs as READY")
-        fallback = dynamodb.scan(
-            TableName=DOCUMENT_TABLE,
-            FilterExpression='#status = :s',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={':s': {'S': 'INDEXING'}}
-        )
-        for item in fallback.get('Items', []):
-            doc_id = item['document_id']['S']
-            dynamodb.update_item(
-                TableName=DOCUMENT_TABLE,
-                Key={'document_id': {'S': doc_id}},
-                UpdateExpression='SET #status = :s, updated_at = :u',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':s': {'S': 'READY'},
-                    ':u': {'S': datetime.utcnow().isoformat()}
-                }
-            )
-            print(f"[Fallback] Updated document {doc_id} to READY")
+
+def handle_bedrock_ingestion_event(event):
+    """Secondary handler — kept as fallback if EventBridge happens to fire."""
+    detail = event.get('detail', {})
+    job_id = detail.get('ingestionJobId')
+    kb_id = detail.get('knowledgeBaseId')
+    status = detail.get('status')
+    
+    print(f"Bedrock Ingestion Job {job_id} for KB {kb_id} changed to {status}")
+    
+    new_status = 'READY' if status == 'COMPLETE' else 'ERROR'
+    _update_docs_by_job_id(job_id, new_status)

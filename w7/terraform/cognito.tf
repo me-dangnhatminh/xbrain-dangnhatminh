@@ -120,7 +120,7 @@ data "aws_region" "current" {}
 # -----------------------------------------------------------------------------
 locals {
   test_users = {
-    "company_a@example.com" = { password = "Dochub@2025!", workspace_id = "ws_company_a" }
+    "company_a@example.com" = { password = "Dochub@2025!", workspace_id = "insightmate" }
     "company_b@example.com" = { password = "Dochub@2025!", workspace_id = "ws_company_b" }
   }
 }

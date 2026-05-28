@@ -163,14 +163,14 @@ export default function KBDetailPage() {
       const aiUrl = import.meta.env.VITE_API_URL;
       if (!aiUrl) throw new Error('Chưa cấu hình VITE_API_URL');
 
-      // workspace_id is now extracted server-side from the JWT
+      // Send workspace_id so the backend queries the specific Knowledge Base
       const response = await fetch(`${aiUrl}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${user.idToken}`,
         },
-        body: JSON.stringify({ query: userMsg.content }),
+        body: JSON.stringify({ query: userMsg.content, workspace_id: kbId }),
       });
 
       if (!response.ok) throw new Error('Lỗi khi gọi AI Backend');

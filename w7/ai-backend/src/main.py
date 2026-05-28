@@ -53,6 +53,7 @@ pipeline = RAGPipeline(
 # ── Schemas ────────────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="User question")
+    workspace_id: str | None = None
     # workspace_id is now extracted from the verified JWT — not accepted from client
 
 
@@ -76,23 +77,31 @@ def chat_with_docs(
     Requires:  Authorization: Bearer <cognito_token>
     workspace_id is extracted from the JWT (custom:workspace_id or sub).
     """
-    workspace_id = get_workspace_id(token_payload)
+    tenant_id = get_workspace_id(token_payload)
+    requested_workspace_id = getattr(body, 'workspace_id', None)
+    
+    if requested_workspace_id:
+        composite_workspace_id = f"{tenant_id}#{requested_workspace_id}"
+    else:
+        # Fallback to just tenant_id if client didn't send workspace_id (legacy behavior)
+        composite_workspace_id = tenant_id
 
     start = time.perf_counter()
     logger.info(
         "chat_request",
         extra={
-            "workspace_id": workspace_id,
+            "tenant_id": tenant_id,
+            "workspace_id": requested_workspace_id,
+            "composite_workspace_id": composite_workspace_id,
             "query_len": len(body.query),
             "jwt_sub": token_payload.get("sub"),
-            "jwt_custom_workspace": token_payload.get("custom:workspace_id"),
         },
     )
 
     try:
         response = pipeline.retrieve_and_generate(
             query=body.query,
-            workspace_id=workspace_id,
+            workspace_id=composite_workspace_id,
             top_k=5,
         )
         latency_ms = round((time.perf_counter() - start) * 1000, 2)

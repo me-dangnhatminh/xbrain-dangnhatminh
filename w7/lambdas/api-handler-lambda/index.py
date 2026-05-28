@@ -1,15 +1,7 @@
 """
 API Handler Lambda
 Handles all REST CRUD operations for Workspaces and Documents.
-
-Routes:
-  GET    /workspaces                    - List all workspaces
-  POST   /workspaces                    - Create a workspace
-  DELETE /workspaces/{workspace_id}     - Delete workspace + all its documents
-  GET    /documents                     - List documents (filter by workspace_id)
-  GET    /documents/{document_id}       - Get a single document by ID
-  POST   /documents/upload              - Init document upload (presigned POST URL)
-  DELETE /documents/{document_id}       - Delete a document (DynamoDB + S3 + metadata)
+ENFORCES STRICT TENANT ISOLATION VIA COMPOSITE KEYS.
 """
 
 import json
@@ -46,9 +38,25 @@ def _body(event: dict) -> dict:
 def _path_param(event: dict, name: str) -> str | None:
     return (event.get("pathParameters") or {}).get(name)
 
-
 def _query_param(event: dict, name: str) -> str | None:
     return (event.get("queryStringParameters") or {}).get(name)
+
+
+def _get_tenant_id(event: dict) -> str:
+    """Extract tenant_id securely from API Gateway Cognito Authorizer JWT claims."""
+    claims = event.get("requestContext", {}).get("authorizer", {}).get("claims", {})
+    if not claims:
+        return "local-dev-workspace"
+        
+    ws_id = claims.get("custom:workspace_id")
+    if ws_id:
+        return ws_id
+        
+    sub = claims.get("sub")
+    if sub:
+        return sub
+        
+    raise PermissionError("Unauthorized: Identity claims missing")
 
 
 def respond(status: int, body: dict) -> dict:
@@ -65,7 +73,7 @@ def respond(status: int, body: dict) -> dict:
 
 
 def _delete_s3_prefix(prefix: str) -> None:
-    """Delete all S3 objects under a given prefix (max 1000 for hackathon scale)."""
+    """Delete all S3 objects under a given prefix."""
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
         objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
@@ -84,14 +92,14 @@ def handler(event, context):
     try:
         # ── Workspaces ──────────────────────────────────────────────────────
         if path == "/workspaces" and method == "GET":
-            return get_workspaces()
+            return get_workspaces(event)
 
         if path == "/workspaces" and method == "POST":
-            return create_workspace(_body(event))
+            return create_workspace(event, _body(event))
 
         if path == "/workspaces/{workspace_id}" and method == "DELETE":
             ws_id = _path_param(event, "workspace_id")
-            return delete_workspace(ws_id)
+            return delete_workspace(event, ws_id)
 
         # ── Documents ───────────────────────────────────────────────────────
         if path == "/documents" and method == "GET":
@@ -99,17 +107,19 @@ def handler(event, context):
 
         if path == "/documents/{document_id}" and method == "GET":
             doc_id = _path_param(event, "document_id")
-            return get_document(doc_id)
+            return get_document(event, doc_id)
 
         if path == "/documents/upload" and method == "POST":
-            return init_upload(_body(event))
+            return init_upload(event, _body(event))
 
         if path == "/documents/{document_id}" and method == "DELETE":
             doc_id = _path_param(event, "document_id")
-            return delete_document(doc_id)
+            return delete_document(event, doc_id)
 
         return respond(404, {"error": "Not Found", "path": path, "method": method})
 
+    except PermissionError as exc:
+        return respond(403, {"error": str(exc)})
     except ValueError as exc:
         return respond(400, {"error": str(exc)})
     except Exception as exc:
@@ -119,29 +129,31 @@ def handler(event, context):
 
 # ── Workspace Handlers ─────────────────────────────────────────────────────────
 
-def get_workspaces() -> dict:
+def get_workspaces(event: dict) -> dict:
+    tenant_id = _get_tenant_id(event)
     table = dynamodb.Table(WORKSPACE_TABLE)
+    # Filter workspaces by tenant_name (which stores the tenant_id)
     result = table.scan()
-    return respond(200, {"workspaces": result.get("Items", [])})
+    items = [item for item in result.get("Items", []) if item.get("tenant_name") == tenant_id]
+    return respond(200, {"workspaces": items})
 
 
-def create_workspace(body: dict) -> dict:
+def create_workspace(event: dict, body: dict) -> dict:
+    tenant_id = _get_tenant_id(event)
     workspace_id = (body.get("workspace_id") or "").strip()
-    tenant_name = (body.get("tenant_name") or "").strip()
-
-    if not workspace_id or not tenant_name:
-        raise ValueError("workspace_id and tenant_name are required")
+    
+    if not workspace_id:
+        raise ValueError("workspace_id is required")
 
     table = dynamodb.Table(WORKSPACE_TABLE)
 
-    # Idempotency check — return 409 if already exists
     existing = table.get_item(Key={"workspace_id": workspace_id}).get("Item")
     if existing:
         return respond(409, {"error": "Workspace already exists", "workspace": existing})
 
     item = {
         "workspace_id": workspace_id,
-        "tenant_name": tenant_name,
+        "tenant_name": tenant_id, # Link this workspace to the tenant
         "created_at": _now(),
         "updated_at": _now(),
     }
@@ -149,19 +161,21 @@ def create_workspace(body: dict) -> dict:
     return respond(201, {"message": "Workspace created", "workspace": item})
 
 
-def delete_workspace(workspace_id: str | None) -> dict:
+def delete_workspace(event: dict, workspace_id: str | None) -> dict:
     if not workspace_id:
         raise ValueError("workspace_id path parameter is required")
-
+        
+    tenant_id = _get_tenant_id(event)
     ws_table = dynamodb.Table(WORKSPACE_TABLE)
     doc_table = dynamodb.Table(DOCUMENT_TABLE)
 
-    # 1. Check workspace exists
     existing = ws_table.get_item(Key={"workspace_id": workspace_id}).get("Item")
     if not existing:
         return respond(404, {"error": "Workspace not found"})
+        
+    if existing.get("tenant_name") != tenant_id:
+        raise PermissionError("Access Denied: You cannot delete another tenant's workspace")
 
-    # 2. Find and delete all documents belonging to this workspace
     docs = doc_table.scan(
         FilterExpression=Attr("workspace_id").eq(workspace_id)
     ).get("Items", [])
@@ -171,10 +185,7 @@ def delete_workspace(workspace_id: str | None) -> dict:
         _hard_delete_document(doc)
         deleted_docs.append(doc["document_id"])
 
-    # 3. Delete S3 prefix for the workspace (catches any orphaned files)
     _delete_s3_prefix(f"{workspace_id}/")
-
-    # 4. Delete workspace record
     ws_table.delete_item(Key={"workspace_id": workspace_id})
 
     return respond(200, {
@@ -187,14 +198,18 @@ def delete_workspace(workspace_id: str | None) -> dict:
 # ── Document Handlers ──────────────────────────────────────────────────────────
 
 def list_documents(event: dict) -> dict:
+    tenant_id = _get_tenant_id(event)
     workspace_id = _query_param(event, "workspace_id")
     if not workspace_id:
         raise ValueError("workspace_id query parameter is required")
+        
+    # Verify workspace ownership
+    ws_table = dynamodb.Table(WORKSPACE_TABLE)
+    ws = ws_table.get_item(Key={"workspace_id": workspace_id}).get("Item")
+    if not ws or ws.get("tenant_name") != tenant_id:
+        raise PermissionError("Access Denied")
 
     table = dynamodb.Table(DOCUMENT_TABLE)
-
-    # Scan with filter — acceptable for hackathon scale.
-    # In production: add a GSI on workspace_id for O(1) queries.
     result = table.scan(FilterExpression=Attr("workspace_id").eq(workspace_id))
     documents = sorted(
         result.get("Items", []),
@@ -204,25 +219,40 @@ def list_documents(event: dict) -> dict:
     return respond(200, {"documents": documents, "count": len(documents)})
 
 
-def get_document(document_id: str | None) -> dict:
+def get_document(event: dict, document_id: str | None) -> dict:
     if not document_id:
         raise ValueError("document_id path parameter is required")
 
+    tenant_id = _get_tenant_id(event)
     table = dynamodb.Table(DOCUMENT_TABLE)
+    
     item = table.get_item(Key={"document_id": document_id}).get("Item")
     if not item:
         return respond(404, {"error": "Document not found"})
+        
+    # Verify ownership
+    ws_table = dynamodb.Table(WORKSPACE_TABLE)
+    ws = ws_table.get_item(Key={"workspace_id": item.get("workspace_id")}).get("Item")
+    if not ws or ws.get("tenant_name") != tenant_id:
+        raise PermissionError("Access Denied")
+        
     return respond(200, {"document": item})
 
 
-def init_upload(body: dict) -> dict:
+def init_upload(event: dict, body: dict) -> dict:
+    tenant_id = _get_tenant_id(event)
     workspace_id = (body.get("workspace_id") or "").strip()
     filename = (body.get("filename") or "").strip()
 
-    if not workspace_id or not filename:
-        raise ValueError("workspace_id and filename are required")
+    if not filename or not workspace_id:
+        raise ValueError("filename and workspace_id are required")
+        
+    # Verify workspace ownership
+    ws_table = dynamodb.Table(WORKSPACE_TABLE)
+    ws = ws_table.get_item(Key={"workspace_id": workspace_id}).get("Item")
+    if not ws or ws.get("tenant_name") != tenant_id:
+        raise PermissionError("Access Denied: Workspace belongs to another tenant")
 
-    # Validate filename extension
     allowed_ext = {".pdf", ".docx", ".txt", ".md"}
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in allowed_ext:
@@ -232,7 +262,6 @@ def init_upload(body: dict) -> dict:
     s3_key = f"{workspace_id}/{document_id}/{filename}"
     metadata_key = f"{s3_key}.metadata.json"
 
-    # 1. Create PENDING record in DynamoDB
     table = dynamodb.Table(DOCUMENT_TABLE)
     item = {
         "document_id": document_id,
@@ -245,15 +274,15 @@ def init_upload(body: dict) -> dict:
     }
     table.put_item(Item=item)
 
-    # 2. Write Bedrock metadata.json for Tenant Isolation filtering
+    # Secure Multi-Tenant Composite Key for Bedrock Metadata
+    composite_key = f"{tenant_id}#{workspace_id}"
     s3.put_object(
         Bucket=S3_BUCKET,
         Key=metadata_key,
-        Body=json.dumps({"metadataAttributes": {"workspace_id": workspace_id}}),
+        Body=json.dumps({"metadataAttributes": {"workspace_id": composite_key}}),
         ContentType="application/json",
     )
 
-    # 3. Generate Pre-signed POST URL (valid 5 min, max 20MB)
     presigned = s3.generate_presigned_post(
         Bucket=S3_BUCKET,
         Key=s3_key,
@@ -268,14 +297,22 @@ def init_upload(body: dict) -> dict:
     })
 
 
-def delete_document(document_id: str | None) -> dict:
+def delete_document(event: dict, document_id: str | None) -> dict:
     if not document_id:
         raise ValueError("document_id path parameter is required")
 
+    tenant_id = _get_tenant_id(event)
     table = dynamodb.Table(DOCUMENT_TABLE)
+    
     item = table.get_item(Key={"document_id": document_id}).get("Item")
     if not item:
         return respond(404, {"error": "Document not found"})
+        
+    # Verify ownership
+    ws_table = dynamodb.Table(WORKSPACE_TABLE)
+    ws = ws_table.get_item(Key={"workspace_id": item.get("workspace_id")}).get("Item")
+    if not ws or ws.get("tenant_name") != tenant_id:
+        raise PermissionError("Access Denied")
 
     _hard_delete_document(item)
     return respond(200, {
@@ -286,11 +323,9 @@ def delete_document(document_id: str | None) -> dict:
 
 
 def _hard_delete_document(doc: dict) -> None:
-    """Delete document from DynamoDB and all associated S3 objects."""
     doc_id = doc["document_id"]
     s3_key = doc.get("s3_key")
 
-    # Delete S3 file + metadata.json
     if s3_key:
         try:
             s3.delete_object(Bucket=S3_BUCKET, Key=s3_key)
@@ -298,6 +333,5 @@ def _hard_delete_document(doc: dict) -> None:
         except Exception as exc:
             print(f"Warning: S3 delete failed for {s3_key}: {exc}")
 
-    # Delete DynamoDB record
     dynamodb.Table(DOCUMENT_TABLE).delete_item(Key={"document_id": doc_id})
     print(f"Deleted document {doc_id} from DynamoDB and S3")
