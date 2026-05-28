@@ -45,18 +45,18 @@ def handle_s3_upload(record):
     if len(parts) >= 3:
         document_id = parts[1]
         
-        # Update DynamoDB status to READY (Hackathon workaround: Bedrock doesn't emit EventBridge events)
+        # FIX #1: Set status to INDEXING (NOT READY) — file is uploaded but not yet indexed
         dynamodb.update_item(
             TableName=DOCUMENT_TABLE,
             Key={'document_id': {'S': document_id}},
             UpdateExpression='SET #status = :s, updated_at = :u',
             ExpressionAttributeNames={'#status': 'status'},
             ExpressionAttributeValues={
-                ':s': {'S': 'READY'},
+                ':s': {'S': 'INDEXING'},
                 ':u': {'S': datetime.utcnow().isoformat()}
             }
         )
-        print(f"Updated document {document_id} to READY")
+        print(f"Updated document {document_id} to INDEXING")
 
         # Trigger Bedrock Knowledge Base Ingestion Job
         try:
@@ -68,7 +68,7 @@ def handle_s3_upload(record):
             job_id = response['ingestionJob']['ingestionJobId']
             print(f"Started Bedrock Ingestion Job: {job_id}")
             
-            # (Optional) Store job_id in DB if you want to track it
+            # Store job_id in DB for tracking
             dynamodb.update_item(
                 TableName=DOCUMENT_TABLE,
                 Key={'document_id': {'S': document_id}},
@@ -76,7 +76,19 @@ def handle_s3_upload(record):
                 ExpressionAttributeValues={':j': {'S': job_id}}
             )
         except Exception as e:
+            # FIX #2: If ingestion fails, set status to ERROR (don't silently swallow)
             print(f"Failed to start Bedrock Ingestion: {str(e)}")
+            dynamodb.update_item(
+                TableName=DOCUMENT_TABLE,
+                Key={'document_id': {'S': document_id}},
+                UpdateExpression='SET #status = :s, updated_at = :u, error_message = :e',
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={
+                    ':s': {'S': 'ERROR'},
+                    ':u': {'S': datetime.utcnow().isoformat()},
+                    ':e': {'S': str(e)}
+                }
+            )
 
 
 def handle_bedrock_ingestion_event(event):
@@ -87,11 +99,7 @@ def handle_bedrock_ingestion_event(event):
     
     print(f"Bedrock Ingestion Job {job_id} for KB {kb_id} changed to {status}")
     
-    # We need to find which document(s) this job belongs to and update their status.
-    # In a simple hackathon setup, if it's COMPLETE, we can just scan for INDEXING docs 
-    # and mark them READY. Or query by ingestion_job_id using a GSI.
-    # Here is a basic implementation assuming we update all INDEXING docs that match the job_id.
-    
+    # FIX #3: Only set READY when Bedrock confirms COMPLETE
     new_status = 'READY' if status == 'COMPLETE' else 'ERROR'
     
     # Without a GSI on ingestion_job_id, we have to scan (okay for Hackathon scale)
@@ -115,3 +123,27 @@ def handle_bedrock_ingestion_event(event):
             }
         )
         print(f"Updated document {doc_id} to {new_status}")
+
+    # FIX #4: If no documents matched by job_id, scan for all INDEXING docs and mark READY
+    # This handles the case where EventBridge doesn't carry job_id or it doesn't match
+    if not items and status == 'COMPLETE':
+        print("No docs matched by job_id, falling back to marking all INDEXING docs as READY")
+        fallback = dynamodb.scan(
+            TableName=DOCUMENT_TABLE,
+            FilterExpression='#status = :s',
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={':s': {'S': 'INDEXING'}}
+        )
+        for item in fallback.get('Items', []):
+            doc_id = item['document_id']['S']
+            dynamodb.update_item(
+                TableName=DOCUMENT_TABLE,
+                Key={'document_id': {'S': doc_id}},
+                UpdateExpression='SET #status = :s, updated_at = :u',
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={
+                    ':s': {'S': 'READY'},
+                    ':u': {'S': datetime.utcnow().isoformat()}
+                }
+            )
+            print(f"[Fallback] Updated document {doc_id} to READY")

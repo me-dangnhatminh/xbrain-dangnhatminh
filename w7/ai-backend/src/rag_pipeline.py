@@ -92,6 +92,16 @@ class RAGPipeline:
             raise ValueError("knowledge_base_id is required for retrieval")
 
         try:
+            logger.info(
+                "retrieval_start",
+                extra={
+                    "kb_id": self.knowledge_base_id,
+                    "workspace_id": workspace_id,
+                    "query": query[:100],
+                    "top_k": top_k,
+                },
+            )
+
             response = self.bedrock_agent_runtime.retrieve(
                 knowledgeBaseId=self.knowledge_base_id,
                 retrievalQuery={"text": query},
@@ -105,8 +115,11 @@ class RAGPipeline:
                 },
             )
 
+            raw_results = response.get("retrievalResults", [])
+            logger.info("retrieval_raw_results", extra={"count": len(raw_results), "workspace_id": workspace_id})
+
             chunks = []
-            for result in response.get("retrievalResults", []):
+            for result in raw_results:
                 score = result.get("score", 0.0)
                 if score < MIN_RELEVANCE_SCORE:
                     logger.debug("Skipping low-score chunk (%.3f < %.2f)", score, MIN_RELEVANCE_SCORE)
@@ -114,6 +127,15 @@ class RAGPipeline:
                 text = result.get("content", {}).get("text", "")
                 uri = result.get("location", {}).get("s3Location", {}).get("uri", "")
                 chunks.append(Chunk(text=text, source=_parse_source(uri), score=score))
+
+            if not raw_results:
+                logger.warning(
+                    "NO chunks returned from Bedrock KB. Possible causes: "
+                    "(1) workspace_id '%s' in JWT does not match metadata in S3, "
+                    "(2) Ingestion job has not completed yet, "
+                    "(3) Knowledge Base has no indexed documents.",
+                    workspace_id,
+                )
 
             logger.info(
                 "retrieval_done",

@@ -4,6 +4,8 @@ data "archive_file" "api_handler_zip" {
   output_path = "${path.module}/../lambdas/api-handler.zip"
 }
 
+
+
 resource "aws_lambda_function" "api_handler" {
   function_name    = "${var.application}-api-handler"
   role             = aws_iam_role.lambda_role.arn
@@ -13,6 +15,7 @@ resource "aws_lambda_function" "api_handler" {
   source_code_hash = data.archive_file.api_handler_zip.output_base64sha256
   timeout          = 15
   memory_size      = 256
+
 
   environment {
     variables = {

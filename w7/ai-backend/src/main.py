@@ -79,7 +79,15 @@ def chat_with_docs(
     workspace_id = get_workspace_id(token_payload)
 
     start = time.perf_counter()
-    logger.info("chat_request", extra={"workspace_id": workspace_id, "query_len": len(body.query)})
+    logger.info(
+        "chat_request",
+        extra={
+            "workspace_id": workspace_id,
+            "query_len": len(body.query),
+            "jwt_sub": token_payload.get("sub"),
+            "jwt_custom_workspace": token_payload.get("custom:workspace_id"),
+        },
+    )
 
     try:
         response = pipeline.retrieve_and_generate(

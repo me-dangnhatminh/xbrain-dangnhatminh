@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# 8. NETWORK FOUNDATION (VPC, Subnets, VPC Endpoints) - Tiêu chí #6
+# NETWORK FOUNDATION (VPC, Subnets, VPC Endpoints)
 # -----------------------------------------------------------------------------
 
 resource "aws_vpc" "main" {
@@ -94,14 +94,14 @@ resource "aws_route_table_association" "priv2" {
 # VPC Endpoints (S3 & DynamoDB Gateway Endpoints để tối ưu chi phí & bảo mật)
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.main.id
-  service_name      = "com.amazonaws.us-east-1.s3"
+  service_name      = "com.amazonaws.${var.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id, aws_route_table.public.id]
 }
 
 resource "aws_vpc_endpoint" "dynamodb" {
   vpc_id            = aws_vpc.main.id
-  service_name      = "com.amazonaws.us-east-1.dynamodb"
+  service_name      = "com.amazonaws.${var.region}.dynamodb"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id, aws_route_table.public.id]
 }

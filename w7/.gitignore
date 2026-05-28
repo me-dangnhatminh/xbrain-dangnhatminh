@@ -7,7 +7,7 @@ terraform/tfplan
 terraform/*.zip
 
 # Lambda
-lambda/*.zip
+lambdas/*.zip
 
 # Node
 frontend/node_modules/

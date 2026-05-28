@@ -104,8 +104,4 @@ resource "aws_s3_bucket_policy" "frontend_policy" {
   })
 }
 
-# --- Output URL ---
-output "frontend_url" {
-  description = "URL của Frontend (CloudFront HTTPS) - Nhấn vào đây để xem web!"
-  value       = "https://${aws_cloudfront_distribution.frontend_distribution.domain_name}"
-}
+

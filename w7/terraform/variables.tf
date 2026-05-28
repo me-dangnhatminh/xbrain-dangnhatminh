@@ -1,8 +1,15 @@
+variable "region" {
+  description = "AWS Region"
+  type        = string
+  default     = "us-east-1"
+}
+
 variable "application" {
   description = "Application name"
   type        = string
-  default     = "dochub"
+  default     = "dochubx"
 }
+
 
 variable "bedrock_kb_id" {
   description = "Knowledge Base ID created on Console"

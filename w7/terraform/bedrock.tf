@@ -1,6 +1,29 @@
 data "aws_caller_identity" "current" {}
 
-# --- IAM Role for Bedrock KB ---
+# -----------------------------------------------------------------------------
+# VECTOR STORE — Amazon S3 Vectors (thay thế OpenSearch Serverless)
+# Chi phí gần $0 ở scale hackathon, so với ~$13/ngày của OpenSearch Serverless
+# -----------------------------------------------------------------------------
+
+# Bucket S3 riêng để lưu vector embeddings (KHÔNG phải bucket file PDF)
+resource "aws_s3vectors_vector_bucket" "kb_vectors" {
+  vector_bucket_name = "${var.application}-ai-kb-vectors"
+}
+
+# Vector Index bên trong bucket — Bedrock KB sẽ write embeddings vào đây
+resource "aws_s3vectors_index" "kb_index" {
+  vector_bucket_name = aws_s3vectors_vector_bucket.kb_vectors.vector_bucket_name
+  index_name         = "${var.application}-ai-kb-index"
+
+  data_type       = "float32"
+  dimension       = 1024 # Titan Embed Text v2 output dimension
+  distance_metric = "cosine"
+}
+
+# -----------------------------------------------------------------------------
+# IAM Role for Bedrock Knowledge Base
+# -----------------------------------------------------------------------------
+
 resource "aws_iam_role" "bedrock_kb_role" {
   name = "${var.application}-ai-bedrock-kb-role"
   assume_role_policy = jsonencode({
@@ -24,111 +47,43 @@ resource "aws_iam_role_policy" "bedrock_kb_policy" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # Quyền tạo embeddings bằng Titan
       {
         Effect   = "Allow"
         Action   = ["bedrock:InvokeModel"]
         Resource = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
       },
-      {
-        Effect = "Allow"
-        Action = [
-          "aoss:APIAccessAll"
-        ]
-        Resource = "arn:aws:aoss:us-east-1:${data.aws_caller_identity.current.account_id}:collection/*"
-      },
+      # Quyền đọc file PDF từ S3 data bucket (để ingestion)
       {
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:ListBucket"]
         Resource = [aws_s3_bucket.app_data.arn, "${aws_s3_bucket.app_data.arn}/*"]
-      }
-    ]
-  })
-}
-
-# --- OpenSearch Serverless Collection ---
-resource "aws_opensearchserverless_security_policy" "kb_encryption" {
-  name = "${var.application}-ai-kb-enc"
-  type = "encryption"
-  policy = jsonencode({
-    Rules = [{
-      ResourceType = "collection"
-      Resource     = ["collection/${var.application}-ai-kb"]
-    }]
-    AWSOwnedKey = true
-  })
-}
-
-resource "aws_opensearchserverless_security_policy" "kb_network" {
-  name = "${var.application}-ai-kb-net"
-  type = "network"
-  policy = jsonencode([{
-    Rules = [{
-      ResourceType = "collection"
-      Resource     = ["collection/${var.application}-ai-kb"]
-      }, {
-      ResourceType = "dashboard"
-      Resource     = ["collection/${var.application}-ai-kb"]
-    }]
-    AllowFromPublic = true
-  }])
-}
-
-resource "aws_opensearchserverless_access_policy" "kb_access" {
-  name = "${var.application}-ai-kb-access"
-  type = "data"
-  policy = jsonencode([{
-    Rules = [
-      {
-        ResourceType = "index"
-        Resource     = ["index/${var.application}-ai-kb/*"]
-        Permission   = ["aoss:CreateIndex", "aoss:DeleteIndex", "aoss:UpdateIndex", "aoss:DescribeIndex", "aoss:ReadDocument", "aoss:WriteDocument"]
       },
+      # Quyền đọc/ghi vào S3 Vectors bucket (để lưu/query embeddings)
       {
-        ResourceType = "collection"
-        Resource     = ["collection/${var.application}-ai-kb"]
-        Permission   = ["aoss:CreateCollectionItems", "aoss:DeleteCollectionItems", "aoss:UpdateCollectionItems", "aoss:DescribeCollectionItems"]
+        Effect = "Allow"
+        Action = [
+          "s3vectors:PutVectors",
+          "s3vectors:GetVectors",
+          "s3vectors:DeleteVectors",
+          "s3vectors:QueryVectors",
+          "s3vectors:ListVectors",
+        ]
+        Resource = [
+          aws_s3vectors_vector_bucket.kb_vectors.vector_bucket_arn,
+          "${aws_s3vectors_vector_bucket.kb_vectors.vector_bucket_arn}/*",
+          aws_s3vectors_index.kb_index.index_arn,
+          "${aws_s3vectors_index.kb_index.index_arn}/*",
+        ]
       }
     ]
-    Principal = [
-      aws_iam_role.bedrock_kb_role.arn,
-      data.aws_caller_identity.current.arn
-    ]
-  }])
+  })
 }
 
-resource "aws_opensearchserverless_collection" "kb" {
-  name = "${var.application}-ai-kb"
-  type = "VECTORSEARCH"
+# -----------------------------------------------------------------------------
+# Bedrock Knowledge Base — dùng S3 Vectors làm vector store
+# -----------------------------------------------------------------------------
 
-  depends_on = [
-    aws_opensearchserverless_security_policy.kb_encryption,
-    aws_opensearchserverless_security_policy.kb_network,
-    aws_opensearchserverless_access_policy.kb_access
-  ]
-}
-
-# --- Bootstrap OpenSearch vector index ---
-resource "null_resource" "create_oss_index" {
-  provisioner "local-exec" {
-    command = "python3 ${path.module}/scripts/create_oss_index.py"
-    environment = {
-      COLLECTION_ENDPOINT = aws_opensearchserverless_collection.kb.collection_endpoint
-      INDEX_NAME          = "${var.application}-ai-kb-index"
-      AWS_REGION          = "us-east-1"
-    }
-  }
-
-  triggers = {
-    collection_id = aws_opensearchserverless_collection.kb.id
-  }
-
-  depends_on = [
-    aws_opensearchserverless_collection.kb,
-    aws_opensearchserverless_access_policy.kb_access
-  ]
-}
-
-# --- Bedrock Knowledge Base ---
 resource "aws_bedrockagent_knowledge_base" "app_kb" {
   name     = "${var.application}-ai-kb"
   role_arn = aws_iam_role.bedrock_kb_role.arn
@@ -141,25 +96,23 @@ resource "aws_bedrockagent_knowledge_base" "app_kb" {
   }
 
   storage_configuration {
-    type = "OPENSEARCH_SERVERLESS"
-    opensearch_serverless_configuration {
-      collection_arn    = aws_opensearchserverless_collection.kb.arn
-      vector_index_name = "${var.application}-ai-kb-index"
-      field_mapping {
-        vector_field   = "embedding"
-        text_field     = "text"
-        metadata_field = "metadata"
-      }
+    type = "S3_VECTORS"
+    s3_vectors_configuration {
+      vector_bucket_arn = aws_s3vectors_vector_bucket.kb_vectors.vector_bucket_arn
+      index_name        = aws_s3vectors_index.kb_index.index_name
     }
   }
 
   depends_on = [
     aws_iam_role_policy.bedrock_kb_policy,
-    null_resource.create_oss_index
+    aws_s3vectors_index.kb_index,
   ]
 }
 
-# --- Bedrock Data Source ---
+# -----------------------------------------------------------------------------
+# Bedrock Data Source — S3 bucket chứa file PDF (không đổi)
+# -----------------------------------------------------------------------------
+
 resource "aws_bedrockagent_data_source" "app_ds" {
   name                 = "${var.application}-ai-s3-datasource"
   knowledge_base_id    = aws_bedrockagent_knowledge_base.app_kb.id

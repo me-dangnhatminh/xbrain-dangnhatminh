@@ -1,10 +1,6 @@
 # =============================================================================
 # COGNITO — User Pool & App Client cho AI
 # =============================================================================
-
-# -----------------------------------------------------------------------------
-# 1. User Pool
-# -----------------------------------------------------------------------------
 resource "aws_cognito_user_pool" "app_pool" {
   name = "${var.application}-user-pool"
 
@@ -22,10 +18,8 @@ resource "aws_cognito_user_pool" "app_pool" {
     temporary_password_validity_days = 7
   }
 
-  # Cấu hình MFA — tắt để đơn giản (bật OPTIONAL hoặc ON cho production)
   mfa_configuration = "OFF"
 
-  # Lưu trữ thuộc tính custom:workspace_id cho Tenant Isolation
   schema {
     name                = "workspace_id"
     attribute_data_type = "String"
@@ -38,12 +32,10 @@ resource "aws_cognito_user_pool" "app_pool" {
     }
   }
 
-  # Cấu hình email xác thực (dùng Cognito mặc định — giới hạn 50 email/ngày)
   email_configuration {
     email_sending_account = "COGNITO_DEFAULT"
   }
 
-  # Cho phép user tự đăng ký (tắt nếu chỉ admin mới tạo được user)
   admin_create_user_config {
     allow_admin_create_user_only = false
   }
@@ -54,17 +46,10 @@ resource "aws_cognito_user_pool" "app_pool" {
 }
 
 # -----------------------------------------------------------------------------
-# 2. User Pool Domain (dùng cho Hosted UI nếu cần)
-# -----------------------------------------------------------------------------
 resource "aws_cognito_user_pool_domain" "app_domain" {
   domain       = "${var.application}-ai-${data.aws_caller_identity.current.account_id}"
   user_pool_id = aws_cognito_user_pool.app_pool.id
 }
-
-
-# -----------------------------------------------------------------------------
-# 3. App Client — dùng cho Frontend (SPA, không có client secret)
-# -----------------------------------------------------------------------------
 resource "aws_cognito_user_pool_client" "frontend" {
   name         = "${var.application}-frontend-client"
   user_pool_id = aws_cognito_user_pool.app_pool.id
@@ -126,22 +111,39 @@ resource "aws_api_gateway_authorizer" "cognito" {
   provider_arns   = [aws_cognito_user_pool.app_pool.arn]
 }
 
-# -----------------------------------------------------------------------------
-# 5. Outputs — cần điền vào .env của frontend và backend
-# -----------------------------------------------------------------------------
-output "cognito_user_pool_id" {
-  description = "Cognito User Pool ID — điền vào VITE_COGNITO_USER_POOL_ID và COGNITO_USER_POOL_ID"
-  value       = aws_cognito_user_pool.app_pool.id
-}
 
-output "cognito_client_id" {
-  description = "Cognito App Client ID — điền vào VITE_COGNITO_CLIENT_ID và COGNITO_CLIENT_ID"
-  value       = aws_cognito_user_pool_client.frontend.id
-}
-
-output "cognito_hosted_ui_url" {
-  description = "Hosted UI URL (dùng nếu muốn redirect đến Cognito login page)"
-  value       = "https://${aws_cognito_user_pool_domain.app_domain.domain}.auth.${data.aws_region.current.region}.amazoncognito.com"
-}
 
 data "aws_region" "current" {}
+
+# -----------------------------------------------------------------------------
+# 6. Test Accounts (Tạo sẵn một vài tài khoản để test)
+# -----------------------------------------------------------------------------
+locals {
+  test_users = {
+    "company_a@example.com" = { password = "Dochub@2025!", workspace_id = "ws_company_a" }
+    "company_b@example.com" = { password = "Dochub@2025!", workspace_id = "ws_company_b" }
+  }
+}
+
+resource "aws_cognito_user" "test_users" {
+  for_each       = local.test_users
+  user_pool_id   = aws_cognito_user_pool.app_pool.id
+  username       = each.key
+  password       = each.value.password
+  message_action = "SUPPRESS"
+
+  attributes = {
+    email                 = each.key
+    email_verified        = true
+    "custom:workspace_id" = each.value.workspace_id
+  }
+}
+
+resource "null_resource" "set_permanent_passwords" {
+  for_each   = local.test_users
+  depends_on = [aws_cognito_user.test_users]
+
+  provisioner "local-exec" {
+    command = "aws cognito-idp admin-set-user-password --region ${data.aws_region.current.region} --user-pool-id ${aws_cognito_user_pool.app_pool.id} --username ${each.key} --password '${each.value.password}' --permanent"
+  }
+}

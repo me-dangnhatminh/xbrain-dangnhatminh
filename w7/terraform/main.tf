@@ -1,5 +1,5 @@
 provider "aws" {
-  region = "us-east-1"
+  region = var.region
   default_tags {
     tags = {
       Project     = "${var.application}-g5"
@@ -51,7 +51,7 @@ resource "aws_s3_bucket_cors_configuration" "app_data_cors" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["PUT", "POST"]
-    allowed_origins = ["*"] # Cần siết lại thành domain frontend khi release
+    allowed_origins = ["*"]
     max_age_seconds = 3000
   }
 }
@@ -98,6 +98,7 @@ resource "aws_iam_policy" "lambda_app_policy" {
           "dynamodb:PutItem",
           "dynamodb:GetItem",
           "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
           "dynamodb:Scan",
           "dynamodb:Query"
         ]
@@ -110,9 +111,14 @@ resource "aws_iam_policy" "lambda_app_policy" {
         Effect = "Allow"
         Action = [
           "s3:PutObject",
-          "s3:GetObject"
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
         ]
-        Resource = "${aws_s3_bucket.app_data.arn}/*"
+        Resource = [
+          aws_s3_bucket.app_data.arn,
+          "${aws_s3_bucket.app_data.arn}/*"
+        ]
       },
       {
         Effect = "Allow"

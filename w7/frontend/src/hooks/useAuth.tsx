@@ -8,8 +8,10 @@
  *  - `logout()`  — sign out and clear state
  */
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { AuthUser, signIn, signOut, getCurrentSession } from '@/lib/cognito';
+import { createContext, useContext, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+import { signIn, signOut, getCurrentSession } from '@/lib/cognito';
+import type { AuthUser } from '@/lib/cognito';
 
 interface AuthContextValue {
   user: AuthUser | null;

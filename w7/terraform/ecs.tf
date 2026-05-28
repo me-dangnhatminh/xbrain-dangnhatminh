@@ -64,7 +64,7 @@ resource "aws_ecs_task_definition" "ai_backend" {
   task_role_arn            = aws_iam_role.ecs_task_role.arn
 
   container_definitions = jsonencode([{
-    name      = "ai-backend"
+    name      = "${var.application}-ai-backend"
     image     = "${aws_ecr_repository.ai_backend.repository_url}:latest"
     essential = true
     portMappings = [{
@@ -76,7 +76,9 @@ resource "aws_ecs_task_definition" "ai_backend" {
       { name = "BEDROCK_KB_ID", value = aws_bedrockagent_knowledge_base.app_kb.id },
       { name = "BEDROCK_DS_ID", value = aws_bedrockagent_data_source.app_ds.data_source_id },
       { name = "BEDROCK_MODEL_ID", value = var.bedrock_model_id },
-      { name = "DYNAMODB_TABLE", value = aws_dynamodb_table.documents.name }
+      { name = "DYNAMODB_TABLE", value = aws_dynamodb_table.documents.name },
+      { name = "COGNITO_USER_POOL_ID", value = aws_cognito_user_pool.app_pool.id },
+      { name = "COGNITO_CLIENT_ID", value = aws_cognito_user_pool_client.frontend.id }
     ]
     logConfiguration = {
       logDriver = "awslogs"
@@ -104,7 +106,7 @@ resource "aws_ecs_service" "ai_backend" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.ecs_tg.arn
-    container_name   = "ai-backend"
+    container_name   = "${var.application}-ai-backend"
     container_port   = 8000
   }
 

@@ -213,6 +213,10 @@ resource "aws_api_gateway_method" "chat_post" {
   http_method   = "POST"
   authorization = "COGNITO_USER_POOLS"
   authorizer_id = aws_api_gateway_authorizer.cognito.id
+
+  request_parameters = {
+    "method.request.header.Authorization" = true
+  }
 }
 
 # CORS OPTIONS for /chat
@@ -306,6 +310,10 @@ resource "aws_api_gateway_integration" "chat_post" {
   integration_http_method = "POST"
   type                    = "HTTP_PROXY"
   uri                     = "http://${aws_lb.ecs_alb.dns_name}/chat"
+
+  request_parameters = {
+    "integration.request.header.Authorization" = "method.request.header.Authorization"
+  }
 }
 
 # --- Permission: cho API Gateway gọi Lambda ---
@@ -522,8 +530,3 @@ resource "aws_api_gateway_stage" "prod" {
   stage_name    = "prod"
 }
 
-# --- Output: URL cho Frontend ---
-output "api_gateway_url" {
-  description = "Base URL cho Frontend (điền vào VITE_API_URL)"
-  value       = aws_api_gateway_stage.prod.invoke_url
-}
