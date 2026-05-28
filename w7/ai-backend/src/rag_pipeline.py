@@ -5,18 +5,26 @@ Handles RAG retrieval with Tenant Isolation via metadata filtering.
 """
 
 import json
+import logging
 from dataclasses import dataclass
-from typing import List
+from pathlib import PurePosixPath
+from typing import List, Optional
+from urllib.parse import urlparse
 
 import boto3
+from botocore.config import Config as BotocoreConfig
 
-from src.config import Config
+from src.config import get_config
+
+logger = logging.getLogger(__name__)
+
+# Discard chunks below this relevance threshold to reduce hallucination
+MIN_RELEVANCE_SCORE: float = 0.40
 
 
 @dataclass
 class Chunk:
     """Represents a retrieved chunk from the knowledge base."""
-
     text: str
     source: str
     score: float
@@ -25,31 +33,48 @@ class Chunk:
 @dataclass
 class Response:
     """Represents a generated response from retrieved knowledge."""
-
     answer: str
     sources: List[str]
     chunks_used: List[Chunk]
 
 
+def _parse_source(uri: str) -> str:
+    """Safely extract filename from an S3 URI or HTTPS URL."""
+    try:
+        return PurePosixPath(urlparse(uri).path).name or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _is_anthropic_model(model_id: str) -> bool:
+    return "anthropic" in model_id.lower()
+
+
 class RAGPipeline:
-    """Handles Bedrock Knowledge Base retrieval and optional grounded generation."""
+    """Handles Bedrock Knowledge Base retrieval and grounded generation."""
 
     def __init__(
         self,
-        knowledge_base_id: str = None,
+        knowledge_base_id: Optional[str] = None,
         model_id: str = "",
     ):
-        """
-        Initialize the retrieval helper.
-
-        Args:
-            knowledge_base_id: Bedrock Knowledge Base ID
-            model_id: Bedrock model ID or inference profile ID for optional generation
-        """
         self.knowledge_base_id = knowledge_base_id
         self.model_id = model_id
-        self.bedrock_agent_runtime = boto3.client("bedrock-agent-runtime", region_name=Config.AWS_REGION)
-        self.bedrock_runtime = boto3.client("bedrock-runtime", region_name=Config.AWS_REGION)
+
+        _cfg = BotocoreConfig(
+            retries={"max_attempts": 3, "mode": "adaptive"},
+            read_timeout=30,
+            connect_timeout=5,
+        )
+        config = get_config()
+        self.bedrock_agent_runtime = boto3.client(
+            "bedrock-agent-runtime", region_name=config.AWS_REGION, config=_cfg
+        )
+        self.bedrock_runtime = boto3.client(
+            "bedrock-runtime", region_name=config.AWS_REGION, config=_cfg
+        )
+
+    # ── Public API ─────────────────────────────────────────────────────────────
 
     def retrieve(self, query: str, workspace_id: str, top_k: int = 5) -> List[Chunk]:
         """
@@ -57,114 +82,122 @@ class RAGPipeline:
 
         Args:
             query: User question or search query
-            workspace_id: Tenant ID for metadata filtering (Tenant Isolation)
-            top_k: Number of chunks to retrieve
+            workspace_id: Tenant ID for metadata filtering
+            top_k: Number of chunks to request from Bedrock
 
         Returns:
-            List of Chunk objects with text, source, and score
+            Filtered list of Chunk objects (score >= MIN_RELEVANCE_SCORE)
         """
         if not self.knowledge_base_id:
             raise ValueError("knowledge_base_id is required for retrieval")
 
         try:
-            # Cấu hình filter cho Tenant Isolation (Chỉ tìm tài liệu thuộc workspace_id)
-            vector_config = {
-                "numberOfResults": top_k,
-                "filter": {
-                    "equals": {
-                        "key": "workspace_id",
-                        "value": workspace_id
-                    }
-                }
-            }
-
             response = self.bedrock_agent_runtime.retrieve(
                 knowledgeBaseId=self.knowledge_base_id,
                 retrievalQuery={"text": query},
                 retrievalConfiguration={
-                    "vectorSearchConfiguration": vector_config
+                    "vectorSearchConfiguration": {
+                        "numberOfResults": top_k,
+                        "filter": {
+                            "equals": {"key": "workspace_id", "value": workspace_id}
+                        },
+                    }
                 },
             )
 
             chunks = []
             for result in response.get("retrievalResults", []):
-                text = result.get("content", {}).get("text", "")
-                location = result.get("location", {})
-                s3_location = location.get("s3Location", {})
-                source_uri = s3_location.get("uri", "unknown")
-                source = source_uri.split("/")[-1] if source_uri != "unknown" else "unknown"
                 score = result.get("score", 0.0)
+                if score < MIN_RELEVANCE_SCORE:
+                    logger.debug("Skipping low-score chunk (%.3f < %.2f)", score, MIN_RELEVANCE_SCORE)
+                    continue
+                text = result.get("content", {}).get("text", "")
+                uri = result.get("location", {}).get("s3Location", {}).get("uri", "")
+                chunks.append(Chunk(text=text, source=_parse_source(uri), score=score))
 
-                chunks.append(Chunk(text=text, source=source, score=score))
-
+            logger.info(
+                "retrieval_done",
+                extra={"workspace_id": workspace_id, "chunks_returned": len(chunks), "top_k": top_k},
+            )
             return chunks
 
-        except Exception as e:
-            raise RuntimeError(f"Failed to retrieve from Knowledge Base: {str(e)}")
+        except Exception as exc:
+            raise RuntimeError(f"Failed to retrieve from Knowledge Base: {exc}") from exc
 
     def retrieve_and_generate(self, query: str, workspace_id: str, top_k: int = 5, **_ignored) -> Response:
         """
-        Compatibility helper for direct grounded generation.
-
-        The main API does not call this method. The unified agent should normally
-        invoke retrieve_knowledge as a tool and synthesize the final answer itself.
+        Retrieve chunks then synthesize a grounded answer via Bedrock LLM.
         """
         chunks = self.retrieve(query, workspace_id, top_k)
 
         if not chunks:
             return Response(
-                answer="I could not find relevant information in the knowledge base.",
+                answer="I could not find relevant information in the knowledge base for your query.",
                 sources=[],
                 chunks_used=[],
             )
 
-        context = self._format_chunks_as_context(chunks)
+        context = self._format_context(chunks)
 
         try:
-            request_body = {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 2000,
-                "temperature": 0.0,
-                "system": self._get_knowledge_system_prompt(),
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": f"{context}\n\nQuestion: {query}",
-                    }
-                ],
-            }
-
+            request_body = self._build_model_request(context, query)
             response = self.bedrock_runtime.invoke_model(
                 modelId=self.model_id,
                 body=json.dumps(request_body),
             )
             response_body = json.loads(response["body"].read())
-            answer = response_body.get("content", [{}])[0].get("text", "")
-            sources = list({chunk.source for chunk in chunks})
-
+            answer = self._extract_answer(response_body)
+            sources = sorted({c.source for c in chunks})
             return Response(answer=answer, sources=sources, chunks_used=chunks)
 
-        except Exception as e:
-            raise RuntimeError(f"Failed to generate grounded response: {str(e)}")
+        except Exception as exc:
+            raise RuntimeError(f"Failed to generate grounded response: {exc}") from exc
 
-    def _format_chunks_as_context(self, chunks: List[Chunk]) -> str:
-        """
-        Format retrieved chunks into context text for a model.
+    # ── Private helpers ────────────────────────────────────────────────────────
 
-        Args:
-            chunks: Retrieved knowledge chunks
+    def _build_model_request(self, context: str, query: str) -> dict:
+        """Build Bedrock invoke_model request body based on model provider."""
+        if _is_anthropic_model(self.model_id):
+            return {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2000,
+                "temperature": 0.0,
+                "system": self._system_prompt(),
+                "messages": [
+                    {"role": "user", "content": f"{context}\n\nQuestion: {query}"}
+                ],
+            }
+        # Generic fallback for Amazon Titan / other providers
+        return {
+            "inputText": f"{self._system_prompt()}\n\n{context}\n\nQuestion: {query}",
+            "textGenerationConfig": {"maxTokenCount": 2000, "temperature": 0.0},
+        }
 
-        Returns:
-            Formatted context string
-        """
-        context = "Knowledge base excerpts:\n\n"
-        for index, chunk in enumerate(chunks, 1):
-            context += f"[Source {index}: {chunk.source}]\n{chunk.text}\n\n"
-        return context
+    def _extract_answer(self, response_body: dict) -> str:
+        """Extract answer text from Bedrock response regardless of model provider."""
+        # Anthropic Claude
+        if "content" in response_body:
+            return response_body["content"][0].get("text", "")
+        # Amazon Titan
+        if "results" in response_body:
+            return response_body["results"][0].get("outputText", "")
+        return str(response_body)
 
-    def _get_knowledge_system_prompt(self) -> str:
-        """Prompt for direct grounded generation from retrieved documents."""
-        return """You are an AI document assistant for DocHub AI, a multi-tenant document management platform.
+    def _format_context(self, chunks: List[Chunk]) -> str:
+        """Format retrieved chunks into numbered context block."""
+        lines = ["Knowledge base excerpts:\n"]
+        for i, chunk in enumerate(chunks, 1):
+            lines.append(f"[Source {i}: {chunk.source}]\n{chunk.text}\n")
+        return "\n".join(lines)
 
-Answer only from the supplied knowledge base excerpts. Cite source filenames in the response. If the excerpts do not contain the answer, say that the information is not available in the knowledge base. Do not invent numbers or facts.
-"""
+    def _system_prompt(self) -> str:
+        return (
+            "You are DocHub AI, a precise document assistant for a multi-tenant platform.\n\n"
+            "STRICT RULES:\n"
+            "1. Answer ONLY using information from the provided knowledge base excerpts.\n"
+            "2. Cite every claim using the format [Source N: filename].\n"
+            "3. If the answer is not in the excerpts, respond exactly: "
+            '"The information is not available in the provided documents."\n'
+            "4. Never invent statistics, dates, names, or facts.\n"
+            "5. Be concise and factual."
+        )

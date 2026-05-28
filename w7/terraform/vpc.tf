@@ -6,7 +6,7 @@ resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
   enable_dns_hostnames = true
-  tags                 = { Name = "dochub-vpc" }
+  tags                 = { Name = "${var.application}-vpc" }
 }
 
 # Public Subnets (dành cho ALB và NAT Gateway)
@@ -15,7 +15,7 @@ resource "aws_subnet" "public_1" {
   cidr_block              = "10.0.1.0/24"
   availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
-  tags                    = { Name = "dochub-public-1" }
+  tags                    = { Name = "${var.application}-public-1" }
 }
 
 resource "aws_subnet" "public_2" {
@@ -23,7 +23,7 @@ resource "aws_subnet" "public_2" {
   cidr_block              = "10.0.2.0/24"
   availability_zone       = "us-east-1b"
   map_public_ip_on_launch = true
-  tags                    = { Name = "dochub-public-2" }
+  tags                    = { Name = "${var.application}-public-2" }
 }
 
 # Private Subnets (dành cho ECS Task, tăng cường bảo mật)
@@ -31,20 +31,20 @@ resource "aws_subnet" "private_1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.3.0/24"
   availability_zone = "us-east-1a"
-  tags              = { Name = "dochub-private-1" }
+  tags              = { Name = "${var.application}-private-1" }
 }
 
 resource "aws_subnet" "private_2" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.4.0/24"
   availability_zone = "us-east-1b"
-  tags              = { Name = "dochub-private-2" }
+  tags              = { Name = "${var.application}-private-2" }
 }
 
 # Internet Gateway
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
-  tags   = { Name = "dochub-igw" }
+  tags   = { Name = "${var.application}-igw" }
 }
 
 # NAT Gateway (Giúp ECS trong Private Subnet có thể pull image từ internet)
@@ -54,7 +54,7 @@ resource "aws_eip" "nat" {
 resource "aws_nat_gateway" "nat" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public_1.id
-  tags          = { Name = "dochub-nat" }
+  tags          = { Name = "${var.application}-nat" }
   depends_on    = [aws_internet_gateway.igw]
 }
 
@@ -108,7 +108,7 @@ resource "aws_vpc_endpoint" "dynamodb" {
 
 # Security Groups
 resource "aws_security_group" "alb_sg" {
-  name        = "dochub-alb-sg"
+  name        = "${var.application}-alb-sg"
   vpc_id      = aws_vpc.main.id
   description = "Allow HTTP from anywhere (will be proxied by API Gateway)"
 
@@ -127,7 +127,7 @@ resource "aws_security_group" "alb_sg" {
 }
 
 resource "aws_security_group" "ecs_sg" {
-  name        = "dochub-ecs-sg"
+  name        = "${var.application}-ecs-sg"
   vpc_id      = aws_vpc.main.id
   description = "Allow traffic from ALB"
 

@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import Header from '../components/layout/Header';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Badge } from '../components/ui/badge';
-import { ArrowLeft, Upload, FileText, Send, Bot, User, Loader2 } from 'lucide-react';
+import Header from '@/components/layout/Header';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ArrowLeft, Upload, FileText, Send, Bot, User, Loader2, Trash2 } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 interface FileRecord {
   id: string;
@@ -24,12 +25,14 @@ export default function KBDetailPage() {
   const [searchParams] = useSearchParams();
   const kbId = searchParams.get('kb_id');
   const [kbName, setKbName] = useState<string>('Knowledge Base');
-  
+  const { user } = useAuth();
+
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,17 +40,11 @@ export default function KBDetailPage() {
       navigate('/knowledge-bases');
       return;
     }
-
-    const tenantId = localStorage.getItem('tenant_id');
-    if (!tenantId) {
+    if (!user) {
       navigate('/');
       return;
     }
-
-    // Set Name (For now we just use kbId as name since it's the workspace_id)
     setKbName(kbId);
-
-    // Initial greeting
     setMessages([
       {
         id: 'msg_0',
@@ -55,14 +52,13 @@ export default function KBDetailPage() {
         content: 'Xin chào! Tôi đã sẵn sàng trả lời câu hỏi dựa trên tài liệu trong thư mục này. Bạn muốn hỏi gì?',
       }
     ]);
-
-    // Fetch existing documents
     const fetchDocuments = async () => {
       try {
         const apiUrl = import.meta.env.VITE_API_URL;
         if (!apiUrl) return;
-        
-        const res = await fetch(`${apiUrl}/documents?workspace_id=${kbId}`);
+        const res = await fetch(`${apiUrl}/documents?workspace_id=${kbId}`, {
+          headers: { Authorization: `Bearer ${user.idToken}` },
+        });
         if (res.ok) {
           const data = await res.json();
           const fetchedFiles = data.documents.map((d: any) => ({
@@ -73,11 +69,11 @@ export default function KBDetailPage() {
           setFiles(fetchedFiles);
         }
       } catch (err) {
-        console.error("Failed to load documents", err);
+        console.error('Failed to load documents', err);
       }
     };
     fetchDocuments();
-  }, [kbId, navigate]);
+  }, [kbId, user, navigate]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -89,69 +85,62 @@ export default function KBDetailPage() {
     fileInputRef.current?.click();
   };
 
+  const handleDeleteFile = async (fileId: string) => {
+    if (!user) return;
+    setDeletingFileId(fileId);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (apiUrl) {
+        const res = await fetch(`${apiUrl}/documents/${fileId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${user.idToken}` },
+        });
+        if (!res.ok) throw new Error('Delete failed');
+      }
+      setFiles((prev) => prev.filter((f) => f.id !== fileId));
+    } catch (err) {
+      console.error('Delete file error:', err);
+      alert('Xóa tài liệu thất bại.');
+    } finally {
+      setDeletingFileId(null);
+    }
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !user) return;
 
     setIsUploading(true);
-    
     try {
       const apiUrl = import.meta.env.VITE_API_URL;
       if (!apiUrl) {
-        alert("Chưa cấu hình VITE_API_URL");
+        alert('Chuơ cấu hình VITE_API_URL');
         setIsUploading(false);
         return;
       }
-
-      // 1. Get Pre-signed URL from Lambda
       const initRes = await fetch(`${apiUrl}/documents/upload`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspace_id: kbId,
-          filename: file.name
-        })
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.idToken}`,
+        },
+        body: JSON.stringify({ workspace_id: kbId, filename: file.name }),
       });
-      
       const initData = await initRes.json();
-      
-      if (!initRes.ok) {
-        throw new Error(initData.error || 'Failed to init upload');
-      }
+      if (!initRes.ok) throw new Error(initData.error || 'Failed to init upload');
 
       const { upload_url } = initData;
-
-      // 2. Upload directly to S3
       const formData = new FormData();
-      // Must append fields in the exact order returned by AWS
-      Object.keys(upload_url.fields).forEach(key => {
-        formData.append(key, upload_url.fields[key]);
-      });
+      Object.keys(upload_url.fields).forEach((key) => formData.append(key, upload_url.fields[key]));
       formData.append('file', file);
+      const s3Res = await fetch(upload_url.url, { method: 'POST', body: formData });
+      if (!s3Res.ok) throw new Error('Failed to upload to S3');
 
-      const s3Res = await fetch(upload_url.url, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!s3Res.ok) {
-        throw new Error('Failed to upload to S3');
-      }
-
-      // Success
-      const newFile: FileRecord = {
-        id: initData.document_id,
-        name: file.name,
-        kbId: kbId as string,
-      };
-      setFiles((prev) => [...prev, newFile]);
-      
-      // Reset input
+      setFiles((prev) => [...prev, { id: initData.document_id, name: file.name, kbId: kbId as string }]);
       if (fileInputRef.current) fileInputRef.current.value = '';
-
     } catch (error) {
-      console.error("Upload error:", error);
-      alert("Tải lên thất bại. Vui lòng kiểm tra console.");
+      console.error('Upload error:', error);
+      alert('Tải lên thất bại. Vui lòng kiểm tra console.');
     } finally {
       setIsUploading(false);
     }
@@ -159,53 +148,51 @@ export default function KBDetailPage() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || !user) return;
 
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}`,
       role: 'user',
       content: inputValue.trim(),
     };
-
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
     setIsThinking(true);
 
     try {
       const aiUrl = import.meta.env.VITE_API_URL;
-      if (!aiUrl) throw new Error("Chưa cấu hình VITE_API_URL");
+      if (!aiUrl) throw new Error('Chưa cấu hình VITE_API_URL');
 
+      // workspace_id is now extracted server-side from the JWT
       const response = await fetch(`${aiUrl}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: userMsg.content,
-          workspace_id: kbId
-        })
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.idToken}`,
+        },
+        body: JSON.stringify({ query: userMsg.content }),
       });
 
-      if (!response.ok) {
-        throw new Error("Lỗi khi gọi AI Backend");
-      }
+      if (!response.ok) throw new Error('Lỗi khi gọi AI Backend');
 
       const data = await response.json();
-
       const aiMsg: ChatMessage = {
         id: `msg_${Date.now() + 1}`,
         role: 'ai',
         content: data.answer,
-        source: data.sources && data.sources.length > 0 ? data.sources.join(', ') : undefined,
+        source: data.sources?.length > 0 ? data.sources.join(', ') : undefined,
       };
-
       setMessages((prev) => [...prev, aiMsg]);
     } catch (error) {
-      console.error("Chat error:", error);
-      const errorMsg: ChatMessage = {
-        id: `msg_${Date.now() + 1}`,
-        role: 'ai',
-        content: "Xin lỗi, đã có lỗi xảy ra khi kết nối tới AI. Vui lòng thử lại sau.",
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      console.error('Chat error:', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg_${Date.now() + 1}`,
+          role: 'ai',
+          content: 'Xin lỗi, đã có lỗi xảy ra khi kết nối tới AI. Vui lòng thử lại sau.',
+        },
+      ]);
     } finally {
       setIsThinking(false);
     }
@@ -263,11 +250,21 @@ export default function KBDetailPage() {
             ) : (
               <ul className="space-y-2">
                 {files.map((file) => (
-                  <li key={file.id} className="flex items-start gap-2 p-3 bg-white rounded-md border border-slate-200 shadow-sm">
-                    <FileText className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-                    <span className="text-sm text-slate-700 truncate" title={file.name}>
+                  <li key={file.id} className="group/file flex items-center gap-2 p-3 bg-white rounded-md border border-slate-200 shadow-sm hover:border-slate-300 transition-colors">
+                    <FileText className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="text-sm text-slate-700 truncate flex-1" title={file.name}>
                       {file.name}
                     </span>
+                    <button
+                      onClick={() => handleDeleteFile(file.id)}
+                      disabled={deletingFileId === file.id}
+                      className="opacity-0 group-hover/file:opacity-100 transition-opacity p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 shrink-0"
+                      title="Delete document"
+                    >
+                      {deletingFileId === file.id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Trash2 className="h-3.5 w-3.5" />}
+                    </button>
                   </li>
                 ))}
               </ul>

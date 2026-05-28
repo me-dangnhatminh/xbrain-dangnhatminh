@@ -8,11 +8,11 @@ resource "aws_lambda_permission" "s3_invoke_event_handler" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.event_handler.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.dochub_data.arn
+  source_arn    = aws_s3_bucket.app_data.arn
 }
 
-resource "aws_s3_bucket_notification" "dochub_data_notification" {
-  bucket = aws_s3_bucket.dochub_data.id
+resource "aws_s3_bucket_notification" "app_data_notification" {
+  bucket = aws_s3_bucket.app_data.id
 
   lambda_function {
     lambda_function_arn = aws_lambda_function.event_handler.arn
@@ -24,7 +24,7 @@ resource "aws_s3_bucket_notification" "dochub_data_notification" {
 
 # --- EventBridge Rule: Khi Bedrock Ingestion hoàn tất, gọi event-handler-lambda ---
 resource "aws_cloudwatch_event_rule" "bedrock_ingestion" {
-  name        = "dochub-bedrock-ingestion-status"
+  name        = "${var.application}-bedrock-ingestion-status"
   description = "Capture Bedrock KB ingestion state changes"
 
   event_pattern = jsonencode({

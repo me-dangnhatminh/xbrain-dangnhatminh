@@ -1,3 +1,9 @@
+variable "application" {
+  description = "Application name"
+  type        = string
+  default     = "dochub"
+}
+
 variable "bedrock_kb_id" {
   description = "Knowledge Base ID created on Console"
   type        = string

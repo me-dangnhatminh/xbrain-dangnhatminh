@@ -4,7 +4,7 @@
 
 # --- ECR (Docker Registry) ---
 resource "aws_ecr_repository" "ai_backend" {
-  name                 = "dochub-ai-backend"
+  name                 = "${var.application}-ai-backend"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
 }
@@ -12,7 +12,7 @@ resource "aws_ecr_repository" "ai_backend" {
 # --- ALB (Application Load Balancer) ---
 # ALB nằm ở public subnet để có thể nhận traffic từ API Gateway
 resource "aws_lb" "ecs_alb" {
-  name               = "dochub-alb"
+  name               = "${var.application}-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
@@ -20,7 +20,7 @@ resource "aws_lb" "ecs_alb" {
 }
 
 resource "aws_lb_target_group" "ecs_tg" {
-  name        = "dochub-ecs-tg"
+  name        = "${var.application}-ecs-tg"
   port        = 8000
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
@@ -46,16 +46,16 @@ resource "aws_lb_listener" "ecs_listener" {
 
 # --- ECS Cluster & Service ---
 resource "aws_ecs_cluster" "main" {
-  name = "dochub-cluster"
+  name = "${var.application}-cluster"
 }
 
 resource "aws_cloudwatch_log_group" "ecs_logs" {
-  name              = "/ecs/dochub-ai-backend"
+  name              = "/ecs/${var.application}-ai-backend"
   retention_in_days = 7
 }
 
 resource "aws_ecs_task_definition" "ai_backend" {
-  family                   = "dochub-ai-backend"
+  family                   = "${var.application}-ai-backend"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = 256
@@ -73,15 +73,15 @@ resource "aws_ecs_task_definition" "ai_backend" {
     }]
     environment = [
       { name = "AWS_REGION", value = "us-east-1" },
-      { name = "BEDROCK_KB_ID", value = aws_bedrockagent_knowledge_base.dochub_kb.id },
-      { name = "BEDROCK_DS_ID", value = aws_bedrockagent_data_source.dochub_ds.data_source_id },
+      { name = "BEDROCK_KB_ID", value = aws_bedrockagent_knowledge_base.app_kb.id },
+      { name = "BEDROCK_DS_ID", value = aws_bedrockagent_data_source.app_ds.data_source_id },
       { name = "BEDROCK_MODEL_ID", value = var.bedrock_model_id },
       { name = "DYNAMODB_TABLE", value = aws_dynamodb_table.documents.name }
     ]
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        "awslogs-group"         = "/ecs/dochub-ai-backend"
+        "awslogs-group"         = "/ecs/${var.application}-ai-backend"
         "awslogs-region"        = "us-east-1"
         "awslogs-stream-prefix" = "ecs"
       }
@@ -90,7 +90,7 @@ resource "aws_ecs_task_definition" "ai_backend" {
 }
 
 resource "aws_ecs_service" "ai_backend" {
-  name            = "dochub-ai-service"
+  name            = "${var.application}-ai-service"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.ai_backend.arn
   desired_count   = 1

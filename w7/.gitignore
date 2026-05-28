@@ -6,6 +6,9 @@ terraform/.terraform.lock.hcl
 terraform/tfplan
 terraform/*.zip
 
+# Lambda
+lambda/*.zip
+
 # Node
 frontend/node_modules/
 frontend/dist/

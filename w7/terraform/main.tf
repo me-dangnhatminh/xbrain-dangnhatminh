@@ -2,7 +2,8 @@ provider "aws" {
   region = "us-east-1"
   default_tags {
     tags = {
-      Project = "Group5-Hackathon"
+      Project     = "${var.application}-g5"
+      Application = "${var.application}"
     }
   }
 }
@@ -12,7 +13,7 @@ provider "aws" {
 # -----------------------------------------------------------------------------
 # Bảng lưu trữ thông tin Workspaces/Tenants
 resource "aws_dynamodb_table" "workspaces" {
-  name         = "DocHub_Workspaces"
+  name         = "${var.application}_Workspaces"
   billing_mode = "PAY_PER_REQUEST" # Dùng On-demand để tối ưu $100 budget
   hash_key     = "workspace_id"
 
@@ -24,7 +25,7 @@ resource "aws_dynamodb_table" "workspaces" {
 
 # Bảng lưu trữ trạng thái các Documents (PENDING, INDEXING, READY, ERROR)
 resource "aws_dynamodb_table" "documents" {
-  name         = "DocHub_Documents"
+  name         = "${var.application}_Documents"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "document_id"
 
@@ -38,14 +39,14 @@ resource "aws_dynamodb_table" "documents" {
 # 2. S3 BUCKET
 # -----------------------------------------------------------------------------
 # Bucket dùng để lưu trữ file PDF và file metadata.json
-resource "aws_s3_bucket" "dochub_data" {
-  bucket_prefix = "dochub-data-" # Tự sinh hậu tố ngẫu nhiên để không trùng tên
-  force_destroy = true           # Cho phép xóa sạch bucket khi chạy terraform destroy
+resource "aws_s3_bucket" "app_data" {
+  bucket        = "${var.application}-app-data"
+  force_destroy = true
 }
 
 # Cấu hình CORS cho bucket để Frontend (React/HTML) có thể upload trực tiếp qua Pre-signed URL
-resource "aws_s3_bucket_cors_configuration" "dochub_data_cors" {
-  bucket = aws_s3_bucket.dochub_data.id
+resource "aws_s3_bucket_cors_configuration" "app_data_cors" {
+  bucket = aws_s3_bucket.app_data.id
 
   cors_rule {
     allowed_headers = ["*"]
@@ -61,7 +62,7 @@ resource "aws_s3_bucket_cors_configuration" "dochub_data_cors" {
 
 # --- Role cho Lambda Functions ---
 resource "aws_iam_role" "lambda_role" {
-  name = "dochub-lambda-exec-role"
+  name = "${var.application}-lambda-exec-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -85,7 +86,7 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
 
 # Policy cho Lambda được phép CRUD DynamoDB và ghi file lên S3
 resource "aws_iam_policy" "lambda_app_policy" {
-  name        = "dochub-lambda-app-policy"
+  name        = "${var.application}-lambda-app-policy"
   description = "Cho phep Lambda truy cap DynamoDB va S3"
 
   policy = jsonencode({
@@ -111,7 +112,7 @@ resource "aws_iam_policy" "lambda_app_policy" {
           "s3:PutObject",
           "s3:GetObject"
         ]
-        Resource = "${aws_s3_bucket.dochub_data.arn}/*"
+        Resource = "${aws_s3_bucket.app_data.arn}/*"
       },
       {
         Effect = "Allow"
@@ -137,7 +138,7 @@ resource "aws_iam_role_policy_attachment" "lambda_ecs_exec_attach" {
 
 # --- Role cho ECS Task (AI Backend) ---
 resource "aws_iam_role" "ecs_task_role" {
-  name = "dochub-ecs-task-role"
+  name = "${var.application}-ecs-task-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -155,7 +156,7 @@ resource "aws_iam_role" "ecs_task_role" {
 
 # Policy cho ECS được quyền gọi Bedrock và lấy file từ S3 (nếu cần xử lý thêm)
 resource "aws_iam_policy" "ecs_bedrock_policy" {
-  name        = "dochub-ecs-bedrock-policy"
+  name        = "${var.application}-ecs-bedrock-policy"
   description = "Cho phep ECS goi AWS Bedrock AI"
 
   policy = jsonencode({
@@ -173,7 +174,7 @@ resource "aws_iam_policy" "ecs_bedrock_policy" {
       {
         Effect   = "Allow"
         Action   = ["s3:GetObject"]
-        Resource = "${aws_s3_bucket.dochub_data.arn}/*"
+        Resource = "${aws_s3_bucket.app_data.arn}/*"
       }
     ]
   })

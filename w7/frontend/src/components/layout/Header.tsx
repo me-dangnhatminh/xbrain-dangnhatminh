@@ -1,12 +1,14 @@
-import { LogOut } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function Header() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const handleLogout = () => {
-    localStorage.removeItem('tenant_id');
+    logout();
     navigate('/');
   };
 
@@ -19,10 +21,19 @@ export default function Header() {
           </div>
           DocHub AI
         </div>
-        <Button variant="ghost" size="sm" onClick={handleLogout} className="text-slate-600 hover:text-slate-900">
-          <LogOut className="mr-2 h-4 w-4" />
-          Sign Out
-        </Button>
+
+        <div className="flex items-center gap-3">
+          {user && (
+            <div className="hidden sm:flex items-center gap-1.5 text-sm text-slate-500">
+              <User className="w-3.5 h-3.5" />
+              <span className="font-medium text-slate-700">{user.email}</span>
+            </div>
+          )}
+          <Button variant="ghost" size="sm" onClick={handleLogout} className="text-slate-600 hover:text-slate-900">
+            <LogOut className="mr-2 h-4 w-4" />
+            Sign Out
+          </Button>
+        </div>
       </div>
     </header>
   );

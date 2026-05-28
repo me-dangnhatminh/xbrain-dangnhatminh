@@ -4,7 +4,7 @@
 
 # Bucket chứa Frontend đã build (HTML/CSS/JS)
 resource "aws_s3_bucket" "frontend_bucket" {
-  bucket_prefix = "dochub-frontend-"
+  bucket        = "${var.application}-frontend-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 }
 
@@ -19,8 +19,8 @@ resource "aws_s3_bucket_public_access_block" "frontend_block" {
 
 # OAC (Origin Access Control) để CloudFront truy cập S3 an toàn
 resource "aws_cloudfront_origin_access_control" "frontend_oac" {
-  name                              = "dochub-frontend-oac"
-  description                       = "OAC for DocHub Frontend"
+  name                              = "${var.application}-frontend-oac"
+  description                       = "OAC for Frontend"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
@@ -30,7 +30,7 @@ resource "aws_cloudfront_origin_access_control" "frontend_oac" {
 resource "aws_cloudfront_distribution" "frontend_distribution" {
   origin {
     domain_name              = aws_s3_bucket.frontend_bucket.bucket_regional_domain_name
-    origin_id                = "S3-DocHub-Frontend"
+    origin_id                = "S3-${var.application}-Frontend"
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend_oac.id
   }
 
@@ -41,7 +41,7 @@ resource "aws_cloudfront_distribution" "frontend_distribution" {
   default_cache_behavior {
     allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "S3-DocHub-Frontend"
+    target_origin_id = "S3-${var.application}-Frontend"
 
     forwarded_values {
       query_string = false

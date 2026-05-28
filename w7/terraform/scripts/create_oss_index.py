@@ -7,8 +7,11 @@ from opensearchpy import OpenSearch, RequestsHttpConnection
 from requests_aws4auth import AWS4Auth
 
 COLLECTION_ENDPOINT = os.environ["COLLECTION_ENDPOINT"]
-INDEX_NAME = os.environ.get("INDEX_NAME", "bedrock-kb-index")
-REGION = os.environ.get("AWS_REGION", "us-east-1")
+INDEX_NAME = os.environ.get("INDEX_NAME")
+REGION = os.environ.get("AWS_REGION")
+
+if not COLLECTION_ENDPOINT or not INDEX_NAME or not REGION:
+    raise ValueError("Please set all the required environment variables")
 
 host = COLLECTION_ENDPOINT.replace("https://", "")
 credentials = boto3.Session().get_credentials()
