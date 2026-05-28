@@ -18,6 +18,13 @@ resource "aws_s3vectors_index" "kb_index" {
   data_type       = "float32"
   dimension       = 1024 # Titan Embed Text v2 output dimension
   distance_metric = "cosine"
+
+  metadata_configuration {
+    non_filterable_metadata_keys = [
+      "AMAZON_BEDROCK_TEXT",
+      "AMAZON_BEDROCK_METADATA"
+    ]
+  }
 }
 
 # -----------------------------------------------------------------------------
@@ -47,11 +54,24 @@ resource "aws_iam_role_policy" "bedrock_kb_policy" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # Quyền tạo embeddings bằng Titan
+      # Quyen tao embeddings bang Titan va parse bang Claude 3 Haiku
       {
         Effect   = "Allow"
         Action   = ["bedrock:InvokeModel"]
-        Resource = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
+        Resource = [
+          "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+          "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/*"
+        ]
+      },
+      # Quyen doc thong tin model va inference profile de validate
+      {
+        Effect   = "Allow"
+        Action   = [
+          "bedrock:GetInferenceProfile",
+          "bedrock:GetFoundationModel"
+        ]
+        Resource = "*"
       },
       # Quyền đọc file PDF từ S3 data bucket (để ingestion)
       {
@@ -122,6 +142,23 @@ resource "aws_bedrockagent_data_source" "app_ds" {
     type = "S3"
     s3_configuration {
       bucket_arn = aws_s3_bucket.app_data.arn
+    }
+  }
+
+  vector_ingestion_configuration {
+    parsing_configuration {
+      parsing_strategy = "BEDROCK_FOUNDATION_MODEL"
+      bedrock_foundation_model_configuration {
+        model_arn = "arn:aws:bedrock:us-east-1:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0"
+      }
+    }
+
+    chunking_configuration {
+      chunking_strategy = "FIXED_SIZE"
+      fixed_size_chunking_configuration {
+        max_tokens         = 512
+        overlap_percentage = 20
+      }
     }
   }
 }

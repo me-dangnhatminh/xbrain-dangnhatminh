@@ -236,8 +236,7 @@ class RAGPipeline:
             "STRICT RULES:\n"
             "1. Answer ONLY using information from the provided knowledge base excerpts.\n"
             "2. Cite every claim using the format [Source N: filename].\n"
-            "3. If the answer is not in the excerpts, respond exactly: "
-            '"The information is not available in the provided documents."\n'
+            "3. If the answer is not in the excerpts, state clearly that the information is not available in the provided documents. Always respond in the SAME LANGUAGE as the user's question.\n"
             "4. Never invent statistics, dates, names, or facts.\n"
             "5. Be concise and factual."
         )

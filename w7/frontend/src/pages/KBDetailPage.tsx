@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Clock,
   CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
@@ -485,6 +486,14 @@ export default function KBDetailPage() {
                           >
                             <Loader2 className="h-2.5 w-2.5 mr-0.5 animate-spin" />{" "}
                             Indexing
+                          </Badge>
+                        ) : file.status === "ERROR" ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] px-1.5 py-0 bg-red-50 text-red-700 border-red-200"
+                          >
+                            <AlertCircle className="h-2.5 w-2.5 mr-0.5" />{" "}
+                            Error
                           </Badge>
                         ) : (
                           <Badge
