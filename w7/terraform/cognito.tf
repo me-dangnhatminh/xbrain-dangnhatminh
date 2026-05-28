@@ -133,9 +133,8 @@ resource "aws_cognito_user" "test_users" {
   message_action = "SUPPRESS"
 
   attributes = {
-    email                 = each.key
-    email_verified        = true
-    "custom:workspace_id" = each.value.workspace_id
+    email          = each.key
+    email_verified = true
   }
 }
 

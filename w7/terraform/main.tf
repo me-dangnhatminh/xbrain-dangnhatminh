@@ -4,6 +4,9 @@ provider "aws" {
     tags = {
       Project     = "${var.application}-g5"
       Application = "${var.application}"
+      Team        = "G5"
+      Owner       = "group5"
+      Environment = "hackathon"
     }
   }
 }
