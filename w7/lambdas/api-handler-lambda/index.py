@@ -1,7 +1,7 @@
 """
 API Handler Lambda
 Handles all REST CRUD operations for Workspaces and Documents.
-ENFORCES STRICT TENANT ISOLATION VIA COMPOSITE KEYS.
+ENFORCES STRICT TENANT ISOLATION VIA COMPOSITE KEYS AND EXPLICIT DB FIELDS.
 """
 
 import json
@@ -42,21 +42,24 @@ def _query_param(event: dict, name: str) -> str | None:
     return (event.get("queryStringParameters") or {}).get(name)
 
 
-def _get_tenant_id(event: dict) -> str:
-    """Extract tenant_id securely from API Gateway Cognito Authorizer JWT claims."""
+def _get_identity(event: dict) -> tuple[str, str]:
+    """
+    Extracts tenant_id and owner_sub securely from API Gateway Cognito Authorizer JWT claims.
+    Returns: (tenant_id, owner_sub)
+    """
     claims = event.get("requestContext", {}).get("authorizer", {}).get("claims", {})
     if not claims:
-        return "local-dev-workspace"
+        return ("local-dev-workspace", "local-dev-user")
         
     ws_id = claims.get("custom:workspace_id")
-    if ws_id:
-        return ws_id
-        
     sub = claims.get("sub")
-    if sub:
-        return sub
+    
+    tenant_id = ws_id if ws_id else sub
+    
+    if not tenant_id or not sub:
+        raise PermissionError("Unauthorized: Identity claims missing")
         
-    raise PermissionError("Unauthorized: Identity claims missing")
+    return (tenant_id, sub)
 
 
 def respond(status: int, body: dict) -> dict:
@@ -130,17 +133,21 @@ def handler(event, context):
 # ── Workspace Handlers ─────────────────────────────────────────────────────────
 
 def get_workspaces(event: dict) -> dict:
-    tenant_id = _get_tenant_id(event)
+    tenant_id, _ = _get_identity(event)
     table = dynamodb.Table(WORKSPACE_TABLE)
-    # Filter workspaces by tenant_name (which stores the tenant_id)
+    
+    # Filter workspaces to ONLY return those owned by this tenant
+    # (Note: In production, use a Global Secondary Index on tenant_id for scalability)
     result = table.scan()
-    items = [item for item in result.get("Items", []) if item.get("tenant_name") == tenant_id]
+    items = [item for item in result.get("Items", []) if item.get("tenant_id") == tenant_id]
+    
     return respond(200, {"workspaces": items})
 
 
 def create_workspace(event: dict, body: dict) -> dict:
-    tenant_id = _get_tenant_id(event)
+    tenant_id, owner_sub = _get_identity(event)
     workspace_id = (body.get("workspace_id") or "").strip()
+    name = (body.get("tenant_name") or "Knowledge Base").strip() # Frontend sends name in tenant_name
     
     if not workspace_id:
         raise ValueError("workspace_id is required")
@@ -151,9 +158,12 @@ def create_workspace(event: dict, body: dict) -> dict:
     if existing:
         return respond(409, {"error": "Workspace already exists", "workspace": existing})
 
+    # Clean DB Schema enforcing business logic
     item = {
-        "workspace_id": workspace_id,
-        "tenant_name": tenant_id, # Link this workspace to the tenant
+        "workspace_id": workspace_id, # The unique ID of this Knowledge Base
+        "tenant_id": tenant_id,       # The organization this KB belongs to
+        "owner_sub": owner_sub,       # The specific user who created it
+        "name": name,                 # Human readable name
         "created_at": _now(),
         "updated_at": _now(),
     }
@@ -165,7 +175,7 @@ def delete_workspace(event: dict, workspace_id: str | None) -> dict:
     if not workspace_id:
         raise ValueError("workspace_id path parameter is required")
         
-    tenant_id = _get_tenant_id(event)
+    tenant_id, _ = _get_identity(event)
     ws_table = dynamodb.Table(WORKSPACE_TABLE)
     doc_table = dynamodb.Table(DOCUMENT_TABLE)
 
@@ -173,7 +183,8 @@ def delete_workspace(event: dict, workspace_id: str | None) -> dict:
     if not existing:
         return respond(404, {"error": "Workspace not found"})
         
-    if existing.get("tenant_name") != tenant_id:
+    # Tenant Isolation Verification
+    if existing.get("tenant_id") != tenant_id and existing.get("tenant_name") != tenant_id:
         raise PermissionError("Access Denied: You cannot delete another tenant's workspace")
 
     docs = doc_table.scan(
@@ -198,18 +209,19 @@ def delete_workspace(event: dict, workspace_id: str | None) -> dict:
 # ── Document Handlers ──────────────────────────────────────────────────────────
 
 def list_documents(event: dict) -> dict:
-    tenant_id = _get_tenant_id(event)
+    tenant_id, _ = _get_identity(event)
     workspace_id = _query_param(event, "workspace_id")
     if not workspace_id:
         raise ValueError("workspace_id query parameter is required")
         
-    # Verify workspace ownership
+    # Tenant Isolation Verification
     ws_table = dynamodb.Table(WORKSPACE_TABLE)
     ws = ws_table.get_item(Key={"workspace_id": workspace_id}).get("Item")
-    if not ws or ws.get("tenant_name") != tenant_id:
-        raise PermissionError("Access Denied")
+    if not ws or (ws.get("tenant_id") != tenant_id and ws.get("tenant_name") != tenant_id):
+        raise PermissionError("Access Denied: You do not have access to this Knowledge Base")
 
     table = dynamodb.Table(DOCUMENT_TABLE)
+    # Only return documents belonging to this verified workspace
     result = table.scan(FilterExpression=Attr("workspace_id").eq(workspace_id))
     documents = sorted(
         result.get("Items", []),
@@ -223,35 +235,35 @@ def get_document(event: dict, document_id: str | None) -> dict:
     if not document_id:
         raise ValueError("document_id path parameter is required")
 
-    tenant_id = _get_tenant_id(event)
+    tenant_id, _ = _get_identity(event)
     table = dynamodb.Table(DOCUMENT_TABLE)
     
     item = table.get_item(Key={"document_id": document_id}).get("Item")
     if not item:
         return respond(404, {"error": "Document not found"})
         
-    # Verify ownership
+    # Verify the document belongs to a workspace owned by this tenant
     ws_table = dynamodb.Table(WORKSPACE_TABLE)
     ws = ws_table.get_item(Key={"workspace_id": item.get("workspace_id")}).get("Item")
-    if not ws or ws.get("tenant_name") != tenant_id:
-        raise PermissionError("Access Denied")
+    if not ws or (ws.get("tenant_id") != tenant_id and ws.get("tenant_name") != tenant_id):
+        raise PermissionError("Access Denied: Document belongs to another tenant")
         
     return respond(200, {"document": item})
 
 
 def init_upload(event: dict, body: dict) -> dict:
-    tenant_id = _get_tenant_id(event)
+    tenant_id, owner_sub = _get_identity(event)
     workspace_id = (body.get("workspace_id") or "").strip()
     filename = (body.get("filename") or "").strip()
 
     if not filename or not workspace_id:
         raise ValueError("filename and workspace_id are required")
         
-    # Verify workspace ownership
+    # Verify the target workspace belongs to this tenant
     ws_table = dynamodb.Table(WORKSPACE_TABLE)
     ws = ws_table.get_item(Key={"workspace_id": workspace_id}).get("Item")
-    if not ws or ws.get("tenant_name") != tenant_id:
-        raise PermissionError("Access Denied: Workspace belongs to another tenant")
+    if not ws or (ws.get("tenant_id") != tenant_id and ws.get("tenant_name") != tenant_id):
+        raise PermissionError("Access Denied: Target workspace belongs to another tenant")
 
     allowed_ext = {".pdf", ".docx", ".txt", ".md"}
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -266,6 +278,8 @@ def init_upload(event: dict, body: dict) -> dict:
     item = {
         "document_id": document_id,
         "workspace_id": workspace_id,
+        "tenant_id": tenant_id,     # Explicit tracking of document owner
+        "uploaded_by": owner_sub,   # Audit trail
         "filename": filename,
         "s3_key": s3_key,
         "status": "PENDING",
@@ -275,6 +289,7 @@ def init_upload(event: dict, body: dict) -> dict:
     table.put_item(Item=item)
 
     # Secure Multi-Tenant Composite Key for Bedrock Metadata
+    # This prevents cross-tenant data leakage in the RAG pipeline
     composite_key = f"{tenant_id}#{workspace_id}"
     s3.put_object(
         Bucket=S3_BUCKET,
@@ -301,7 +316,7 @@ def delete_document(event: dict, document_id: str | None) -> dict:
     if not document_id:
         raise ValueError("document_id path parameter is required")
 
-    tenant_id = _get_tenant_id(event)
+    tenant_id, _ = _get_identity(event)
     table = dynamodb.Table(DOCUMENT_TABLE)
     
     item = table.get_item(Key={"document_id": document_id}).get("Item")
@@ -311,7 +326,7 @@ def delete_document(event: dict, document_id: str | None) -> dict:
     # Verify ownership
     ws_table = dynamodb.Table(WORKSPACE_TABLE)
     ws = ws_table.get_item(Key={"workspace_id": item.get("workspace_id")}).get("Item")
-    if not ws or ws.get("tenant_name") != tenant_id:
+    if not ws or (ws.get("tenant_id") != tenant_id and ws.get("tenant_name") != tenant_id):
         raise PermissionError("Access Denied")
 
     _hard_delete_document(item)

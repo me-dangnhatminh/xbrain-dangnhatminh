@@ -45,13 +45,11 @@ export default function KnowledgeBasesPage() {
         });
         if (response.ok) {
           const data = await response.json();
-          const tenantKbs = data.workspaces
-            .filter((ws: any) => ws.tenant_name === user.workspaceId || !ws.tenant_name)
-            .map((ws: any) => ({
+          const tenantKbs = data.workspaces.map((ws: any) => ({
               id: ws.workspace_id,
-              name: ws.workspace_id,
+              name: ws.name || ws.tenant_name || ws.workspace_id, // Fallback chain for display name
               createdAt: new Date(ws.created_at).toLocaleDateString('en-GB'),
-              tenantId: ws.tenant_name,
+              tenantId: ws.tenant_id,
             }));
           setKbs(tenantKbs);
         }
