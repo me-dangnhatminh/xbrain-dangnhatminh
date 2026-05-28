@@ -156,7 +156,7 @@ class RAGPipeline:
         except Exception as exc:
             raise RuntimeError(f"Failed to retrieve from Knowledge Base: {exc}") from exc
 
-    def retrieve_and_generate(self, query: str, workspace_id: str, top_k: int = 5, **_ignored) -> Response:
+    def retrieve_and_generate(self, query: str, workspace_id: str, top_k: int = 5, history: list = None, **_ignored) -> Response:
         """
         Retrieve chunks then synthesize a grounded answer via Bedrock LLM.
         """
@@ -172,7 +172,7 @@ class RAGPipeline:
         context = self._format_context(chunks)
 
         try:
-            request_body = self._build_model_request(context, query)
+            request_body = self._build_model_request(context, query, history)
             response = self.bedrock_runtime.invoke_model(
                 modelId=self.model_id,
                 body=json.dumps(request_body),
@@ -187,17 +187,25 @@ class RAGPipeline:
 
     # ── Private helpers ────────────────────────────────────────────────────────
 
-    def _build_model_request(self, context: str, query: str) -> dict:
+    def _build_model_request(self, context: str, query: str, history: list = None) -> dict:
         """Build Bedrock invoke_model request body based on model provider."""
+        if history is None:
+            history = []
+            
+        messages = []
+        for msg in history[-4:]: # Use at most the last 4 messages to preserve context window
+            role = "user" if msg["role"] == "user" else "assistant"
+            messages.append({"role": role, "content": msg["content"]})
+            
+        messages.append({"role": "user", "content": f"{context}\n\nQuestion: {query}"})
+        
         if _is_anthropic_model(self.model_id):
             return {
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 2000,
                 "temperature": 0.0,
                 "system": self._system_prompt(),
-                "messages": [
-                    {"role": "user", "content": f"{context}\n\nQuestion: {query}"}
-                ],
+                "messages": messages,
             }
         # Generic fallback for Amazon Titan / other providers
         return {

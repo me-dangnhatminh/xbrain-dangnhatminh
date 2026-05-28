@@ -7,6 +7,7 @@ import time
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List, Optional
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -76,9 +77,14 @@ pipeline = RAGPipeline(
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="User question")
     workspace_id: str = Field(..., description="The target workspace ID to search within")
+    history: Optional[List[ChatMessage]] = Field(default=[], description="Chat history context")
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -122,6 +128,7 @@ def chat_with_docs(
             query=body.query,
             workspace_id=composite_workspace_id,
             top_k=5,
+            history=[{"role": msg.role, "content": msg.content} for msg in body.history]
         )
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
         logger.info(

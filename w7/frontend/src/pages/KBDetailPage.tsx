@@ -21,11 +21,11 @@ import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAuth } from "@/hooks/useAuth";
-import { Viewer, Worker } from '@react-pdf-viewer/core';
-import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
-import { pageNavigationPlugin } from '@react-pdf-viewer/page-navigation';
-import '@react-pdf-viewer/core/lib/styles/index.css';
-import '@react-pdf-viewer/default-layout/lib/styles/index.css';
+import { Viewer, Worker } from "@react-pdf-viewer/core";
+import { defaultLayoutPlugin } from "@react-pdf-viewer/default-layout";
+import { pageNavigationPlugin } from "@react-pdf-viewer/page-navigation";
+import "@react-pdf-viewer/core/lib/styles/index.css";
+import "@react-pdf-viewer/default-layout/lib/styles/index.css";
 
 interface FileRecord {
   id: string;
@@ -66,8 +66,13 @@ export default function KBDetailPage() {
   const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
 
   // PDF Viewer states
-  const [activeDocumentUrl, setActiveDocumentUrl] = useState<string | null>(null);
-  const [activeDocumentName, setActiveDocumentName] = useState<string | null>(null);
+  const [activeDocumentUrl, setActiveDocumentUrl] = useState<string | null>(
+    null,
+  );
+  const [activeDocumentName, setActiveDocumentName] = useState<string | null>(
+    null,
+  );
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [activeMdContent, setActiveMdContent] = useState<string | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pendingPageJump, setPendingPageJump] = useState<number | null>(null);
@@ -94,15 +99,11 @@ export default function KBDetailPage() {
     if (saved) {
       try {
         setMessages(JSON.parse(saved));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     } else {
-      setMessages([
-        {
-          id: "msg_0",
-          role: "ai",
-          content: "Xin chào! Tôi đã sẵn sàng trả lời câu hỏi dựa trên tài liệu trong thư mục này. Bạn muốn hỏi gì?",
-        },
-      ]);
+      setMessages([]);
     }
     setHistoryLoaded(true);
 
@@ -119,8 +120,10 @@ export default function KBDetailPage() {
             id: d.document_id,
             name: d.filename,
             kbId: kbId as string,
-            createdAt: new Date(d.created_at || Date.now()).toLocaleDateString('en-GB'),
-            status: d.status || 'AVAILABLE',
+            createdAt: new Date(d.created_at || Date.now()).toLocaleDateString(
+              "en-GB",
+            ),
+            status: d.status,
           }));
           setFiles(fetchedFiles);
         }
@@ -129,6 +132,8 @@ export default function KBDetailPage() {
       }
     };
     fetchDocuments();
+    const interval = setInterval(fetchDocuments, 10000);
+    return () => clearInterval(interval);
   }, [kbId, user, navigate]);
 
   useEffect(() => {
@@ -139,7 +144,10 @@ export default function KBDetailPage() {
   useEffect(() => {
     if (historyLoaded && user && kbId) {
       if (messages.length > 0) {
-        localStorage.setItem(`dochub_chat_${user.username}_${kbId}`, JSON.stringify(messages));
+        localStorage.setItem(
+          `dochub_chat_${user.username}_${kbId}`,
+          JSON.stringify(messages),
+        );
       } else {
         localStorage.removeItem(`dochub_chat_${user.username}_${kbId}`);
       }
@@ -149,13 +157,7 @@ export default function KBDetailPage() {
   const handleClearHistory = () => {
     if (user && kbId) {
       localStorage.removeItem(`dochub_chat_${user.username}_${kbId}`);
-      setMessages([
-        {
-          id: "msg_0",
-          role: "ai",
-          content: "Lịch sử đã được xóa. Bạn muốn hỏi gì?",
-        },
-      ]);
+      setMessages([]);
       toast.success("Đã xóa lịch sử chat");
     }
   };
@@ -207,22 +209,31 @@ export default function KBDetailPage() {
         body: JSON.stringify({ workspace_id: kbId, filename: file.name }),
       });
       const initData = await initRes.json();
-      if (!initRes.ok) throw new Error(initData.error || "Failed to init upload");
+      if (!initRes.ok)
+        throw new Error(initData.error || "Failed to init upload");
 
       const { upload_url } = initData;
       const formData = new FormData();
-      Object.keys(upload_url.fields).forEach((key) => formData.append(key, upload_url.fields[key]));
+      Object.keys(upload_url.fields).forEach((key) =>
+        formData.append(key, upload_url.fields[key]),
+      );
       formData.append("file", file);
-      const s3Res = await fetch(upload_url.url, { method: "POST", body: formData });
+      const s3Res = await fetch(upload_url.url, {
+        method: "POST",
+        body: formData,
+      });
       if (!s3Res.ok) throw new Error("Failed to upload to S3");
 
-      setFiles((prev) => [...prev, {
-        id: initData.document_id,
-        name: file.name,
-        kbId: kbId as string,
-        createdAt: new Date().toLocaleDateString('en-GB'),
-        status: 'PENDING',
-      }]);
+      setFiles((prev) => [
+        ...prev,
+        {
+          id: initData.document_id,
+          name: file.name,
+          kbId: kbId as string,
+          createdAt: new Date().toLocaleDateString("en-GB"),
+          status: "PENDING",
+        },
+      ]);
       if (fileInputRef.current) fileInputRef.current.value = "";
       toast.success(`Đã tải lên: ${file.name}`);
     } catch (error) {
@@ -256,7 +267,11 @@ export default function KBDetailPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${user.idToken}`,
         },
-        body: JSON.stringify({ query: userMsg.content, workspace_id: kbId }),
+        body: JSON.stringify({ 
+          query: userMsg.content, 
+          workspace_id: kbId,
+          history: messages 
+        }),
       });
 
       if (!response.ok) throw new Error("Lỗi khi gọi AI Backend");
@@ -277,7 +292,8 @@ export default function KBDetailPage() {
         {
           id: `msg_${Date.now() + 1}`,
           role: "ai",
-          content: "Xin lỗi, đã có lỗi xảy ra khi kết nối tới AI. Vui lòng thử lại sau.",
+          content:
+            "Xin lỗi, đã có lỗi xảy ra khi kết nối tới AI. Vui lòng thử lại sau.",
         },
       ]);
     } finally {
@@ -289,24 +305,25 @@ export default function KBDetailPage() {
     return content.replace(/\[[^\]]*Source\s*\d+[^\]]*\]/gi, (match) => {
       const numbers = match.match(/\d+/g);
       if (!numbers) return match;
-      const cleanMatch = match.replace(/[\[\]]/g, '');
-      const cleanIndices = numbers.join(',');
+      const cleanMatch = match.replace(/[\[\]]/g, "");
+      const cleanIndices = numbers.join(",");
       return `[${cleanMatch}](#source-${cleanIndices})`;
     });
   };
 
   const handleFileClick = async (file: FileRecord) => {
     if (!user) return;
-    const isPdf = file.name.toLowerCase().endsWith('.pdf');
-    const isMd = file.name.toLowerCase().endsWith('.md');
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
+    const isMd = file.name.toLowerCase().endsWith(".md");
 
     if (!isPdf && !isMd) {
-      toast.error('Hiện tại hệ thống chỉ hỗ trợ xem trực tiếp file PDF và MD.');
+      toast.error("Hiện tại hệ thống chỉ hỗ trợ xem trực tiếp file PDF và MD.");
       return;
     }
 
     setIsPdfLoading(true);
     setActiveDocumentName(file.name);
+    setActiveDocumentId(file.id);
     setActiveMdContent(null);
     setActiveDocumentUrl(null);
     try {
@@ -316,12 +333,14 @@ export default function KBDetailPage() {
       });
       if (!res.ok) throw new Error("Lỗi lấy thông tin file");
       const data = await res.json();
+      const doc = data.document || data;
+      const url = doc.view_url || doc.download_url || doc.url;
 
       if (isPdf) {
-        setActiveDocumentUrl(data.download_url || data.url);
+        setActiveDocumentUrl(url);
         setActiveMdContent(null);
       } else if (isMd) {
-        const mdRes = await fetch(data.download_url || data.url);
+        const mdRes = await fetch(url);
         const mdText = await mdRes.text();
         setActiveMdContent(mdText);
         setActiveDocumentUrl(null);
@@ -330,20 +349,21 @@ export default function KBDetailPage() {
       console.error("Error loading file:", err);
       toast.error("Không thể tải file.");
       setActiveDocumentName(null);
+      setActiveDocumentId(null);
     } finally {
       setIsPdfLoading(false);
     }
   };
 
   const handleChunkClick = async (chunk: Chunk) => {
-    const file = files.find(f => f.name === chunk.source);
+    const file = files.find((f) => f.name === chunk.source);
     if (!file) {
       toast.error(`Không tìm thấy file nguồn: ${chunk.source}`);
       return;
     }
 
-    const isPdf = file.name.toLowerCase().endsWith('.pdf');
-    const isMd = file.name.toLowerCase().endsWith('.md');
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
+    const isMd = file.name.toLowerCase().endsWith(".md");
 
     if (activeDocumentName !== file.name) {
       if (isPdf && chunk.page_number) {
@@ -355,7 +375,12 @@ export default function KBDetailPage() {
     }
 
     if (isMd) {
-      const words = chunk.text.trim().split(/\s+/).filter(Boolean).slice(0, 6).join(' ');
+      const words = chunk.text
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 6)
+        .join(" ");
       setTimeout(() => {
         (window as any).find(words, false, false, true, false, true, false);
       }, 500);
@@ -400,10 +425,16 @@ export default function KBDetailPage() {
               onClick={handleFileUploadTrigger}
               disabled={isUploading}
             >
-              {isUploading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+              {isUploading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4 mr-2" />
+              )}
               {isUploading ? "Đang tải lên..." : "+ Upload File"}
             </Button>
-            <p className="text-[10px] text-center text-slate-500 mt-2">Accepts .pdf, .docx, .md</p>
+            <p className="text-[10px] text-center text-slate-500 mt-2">
+              Accepts .pdf, .docx, .md
+            </p>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-4">
@@ -420,29 +451,56 @@ export default function KBDetailPage() {
                 {files.map((file) => (
                   <li
                     key={file.id}
-                    className="group/file relative flex items-start gap-2 p-3 bg-white rounded-md border border-slate-200 shadow-sm hover:border-blue-300 transition-colors cursor-pointer"
+                    className={`group/file relative flex items-start gap-2 p-3 rounded-md border shadow-sm transition-colors cursor-pointer ${
+                      activeDocumentId === file.id
+                        ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500/30"
+                        : "bg-white border-slate-200 hover:border-blue-300"
+                    }`}
                     onClick={() => handleFileClick(file)}
                   >
                     <FileText className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-slate-700 truncate block" title={file.name}>
+                      <span
+                        className="text-sm text-slate-700 truncate block"
+                        title={file.name}
+                      >
                         {file.name}
                       </span>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] text-slate-400">{file.createdAt}</span>
-                        {file.status === 'AVAILABLE' ? (
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 border-green-200">
-                            <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" /> Available
+                        <span className="text-[10px] text-slate-400">
+                          {file.createdAt}
+                        </span>
+                        {file.status === "READY" ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 border-green-200"
+                          >
+                            <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />{" "}
+                            Ready
+                          </Badge>
+                        ) : file.status === "INDEXING" ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200"
+                          >
+                            <Loader2 className="h-2.5 w-2.5 mr-0.5 animate-spin" />{" "}
+                            Indexing
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200"
+                          >
                             <Clock className="h-2.5 w-2.5 mr-0.5" /> Pending
                           </Badge>
                         )}
                       </div>
                     </div>
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteFile(file.id); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteFile(file.id);
+                      }}
                       disabled={deletingFileId === file.id}
                       className="absolute right-2 top-2 opacity-0 group-hover/file:opacity-100 transition-opacity p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 shrink-0"
                       title="Delete document"
@@ -466,7 +524,9 @@ export default function KBDetailPage() {
             <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
               <div className="flex flex-col items-center gap-2">
                 <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-                <span className="text-sm text-slate-500">Đang tải tài liệu...</span>
+                <span className="text-sm text-slate-500">
+                  Đang tải tài liệu...
+                </span>
               </div>
             </div>
           ) : null}
@@ -510,7 +570,12 @@ export default function KBDetailPage() {
         <div className="w-full md:w-[35%] xl:w-[30%] flex flex-col h-full bg-white relative">
           <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200">
             <span className="text-sm font-medium text-slate-700">AI Chat</span>
-            <Button variant="ghost" size="sm" className="text-xs text-slate-400 hover:text-red-500" onClick={handleClearHistory}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-slate-400 hover:text-red-500"
+              onClick={handleClearHistory}
+            >
               Xóa lịch sử
             </Button>
           </div>
@@ -526,7 +591,9 @@ export default function KBDetailPage() {
                   </div>
                 )}
 
-                <div className={`flex flex-col gap-1 max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                <div
+                  className={`flex flex-col gap-1 max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}
+                >
                   <div
                     className={`px-4 py-3 rounded-2xl text-sm ${
                       msg.role === "user"
@@ -536,7 +603,51 @@ export default function KBDetailPage() {
                   >
                     {msg.role === "ai" ? (
                       <div className="prose prose-sm max-w-none prose-slate">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            a: ({ node, href, children, ...props }) => {
+                              if (href?.startsWith("#source-")) {
+                                return (
+                                  <a
+                                    href={href}
+                                    title={String(children)}
+                                    className="inline-flex items-center align-middle px-1.5 py-0.5 mx-0.5 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 text-[11px] font-medium no-underline border border-blue-200 transition-colors cursor-pointer max-w-[150px] overflow-hidden whitespace-nowrap"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      const indicesStr = href.replace(
+                                        "#source-",
+                                        "",
+                                      );
+                                      if (
+                                        indicesStr &&
+                                        msg.chunks &&
+                                        msg.chunks.length > 0
+                                      ) {
+                                        const index =
+                                          parseInt(
+                                            indicesStr.split(",")[0],
+                                            10,
+                                          ) - 1;
+                                        const chunk = msg.chunks[index];
+                                        if (chunk) handleChunkClick(chunk);
+                                      }
+                                    }}
+                                    {...props}
+                                  >
+                                    <FileText className="h-3 w-3 mr-1 shrink-0" />
+                                    <span className="truncate">{children}</span>
+                                  </a>
+                                );
+                              }
+                              return (
+                                <a href={href} {...props}>
+                                  {children}
+                                </a>
+                              );
+                            },
+                          }}
+                        >
                           {processContent(msg.content)}
                         </ReactMarkdown>
                       </div>
@@ -546,24 +657,29 @@ export default function KBDetailPage() {
                   </div>
 
                   {msg.chunks && msg.chunks.length > 0 && (
-                    <div className="mt-2 w-full">
-                      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                    <details className="mt-2 w-full group">
+                      <summary className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 cursor-pointer hover:text-slate-700 list-none flex items-center select-none">
+                        <ChevronRight className="h-3 w-3 mr-1 transition-transform group-open:rotate-90" />
                         Sources ({msg.chunks.length})
-                      </p>
-                      <div className="space-y-1.5">
+                      </summary>
+                      <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
                         {msg.chunks.map((chunk, i) => (
                           <div
                             key={i}
                             onClick={() => handleChunkClick(chunk)}
-                            className="bg-white p-2.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer group"
+                            className="bg-white p-2.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer group/chunk"
                           >
                             <div className="flex items-center gap-1.5 mb-1">
                               <FileText className="h-3 w-3 text-blue-500" />
-                              <span className="text-[11px] font-medium text-blue-600 truncate">{chunk.source}</span>
+                              <span className="text-[11px] font-medium text-blue-600 truncate">
+                                {chunk.source}
+                              </span>
                               {chunk.page_number && (
-                                <span className="text-[10px] text-slate-400 ml-auto">p.{chunk.page_number}</span>
+                                <span className="text-[10px] text-slate-400 ml-auto">
+                                  p.{chunk.page_number}
+                                </span>
                               )}
-                              <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-blue-400 transition-colors ml-auto shrink-0" />
+                              <ChevronRight className="h-3 w-3 text-slate-300 group-hover/chunk:text-blue-400 transition-colors ml-auto shrink-0" />
                             </div>
                             <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
                               {chunk.text.substring(0, 150)}...
@@ -576,7 +692,7 @@ export default function KBDetailPage() {
                           </div>
                         ))}
                       </div>
-                    </div>
+                    </details>
                   )}
                 </div>
 
@@ -604,7 +720,10 @@ export default function KBDetailPage() {
           </div>
 
           <div className="p-4 bg-white border-t border-slate-200">
-            <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto relative flex items-center">
+            <form
+              onSubmit={handleSendMessage}
+              className="max-w-3xl mx-auto relative flex items-center"
+            >
               <Input
                 value={inputValue}
                 onChange={(e: any) => setInputValue(e.target.value)}
@@ -622,7 +741,9 @@ export default function KBDetailPage() {
               </Button>
             </form>
             <div className="text-center mt-2">
-              <p className="text-[10px] text-slate-400">AI can make mistakes. Check important information.</p>
+              <p className="text-[10px] text-slate-400">
+                AI can make mistakes. Check important information.
+              </p>
             </div>
           </div>
         </div>
