@@ -184,6 +184,11 @@ resource "aws_iam_policy" "ecs_bedrock_policy" {
         Effect   = "Allow"
         Action   = ["s3:GetObject"]
         Resource = "${aws_s3_bucket.app_data.arn}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
       }
     ]
   })

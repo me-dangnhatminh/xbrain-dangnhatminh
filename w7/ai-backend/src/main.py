@@ -16,6 +16,31 @@ from src.auth import get_user_id, verify_token
 from src.config import get_config
 from src.logger import setup_logging
 from src.rag_pipeline import RAGPipeline
+import boto3
+
+cw_client = boto3.client('cloudwatch', region_name='us-east-1')
+
+def put_chat_metrics(workspace_id: str, latency_ms: float):
+    try:
+        cw_client.put_metric_data(
+            Namespace="DocHub/Application",
+            MetricData=[
+                {
+                    "MetricName": "ChatInvocations",
+                    "Dimensions": [{"Name": "Workspace", "Value": workspace_id}],
+                    "Value": 1,
+                    "Unit": "Count"
+                },
+                {
+                    "MetricName": "ChatLatency",
+                    "Dimensions": [{"Name": "Workspace", "Value": workspace_id}],
+                    "Value": latency_ms,
+                    "Unit": "Milliseconds"
+                }
+            ]
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to publish metrics: {exc}")
 
 # ── Bootstrap ──────────────────────────────────────────────────────────────────
 setup_logging()
@@ -107,6 +132,9 @@ def chat_with_docs(
                 "latency_ms": latency_ms,
             },
         )
+        
+        # Publish custom metric
+        put_chat_metrics(requested_workspace_id, latency_ms)
         return {
             "answer": response.answer, 
             "sources": response.sources,

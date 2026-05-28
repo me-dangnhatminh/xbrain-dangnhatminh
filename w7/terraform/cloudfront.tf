@@ -36,6 +36,7 @@ resource "aws_cloudfront_distribution" "frontend_distribution" {
 
   enabled             = true
   is_ipv6_enabled     = true
+  web_acl_id          = aws_wafv2_web_acl.cloudfront.arn
   default_root_object = "index.html"
 
   default_cache_behavior {

@@ -28,3 +28,9 @@ variable "bedrock_model_id" {
   type        = string
   default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
+
+variable "alert_email" {
+  description = "Email address for CloudWatch alarm notifications"
+  type        = string
+  default     = "dangnhatminh09032002@gmail.com"
+}
