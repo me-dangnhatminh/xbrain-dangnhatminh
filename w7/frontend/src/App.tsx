@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import KnowledgeBasesPage from './pages/KnowledgeBasesPage';
 import KBDetailPage from './pages/KBDetailPage';
 import { Loader2 } from 'lucide-react';
+import { Toaster } from 'sonner';
 
 /** Redirect unauthenticated users to login. */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -42,6 +43,7 @@ function App() {
           }
         />
       </Routes>
+      <Toaster position="top-right" richColors />
     </Router>
   );
 }

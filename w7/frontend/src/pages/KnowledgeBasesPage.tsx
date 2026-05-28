@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Plus, FolderOpen, Database, Calendar, ArrowRight, Building2, Loader2, Trash2 } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 
 interface KnowledgeBase {
   id: string;
@@ -89,8 +90,10 @@ export default function KnowledgeBasesPage() {
       setKbs((prev) => [...prev, newKb]);
       setNewKbName('');
       setIsDialogOpen(false);
+      toast.success('Tạo Workspace thành công');
     } catch (error) {
       console.error('Lỗi khi tạo workspace:', error);
+      toast.error('Tạo thất bại. Vui lòng thử lại.');
     } finally {
       setIsCreating(false);
     }
@@ -109,9 +112,10 @@ export default function KnowledgeBasesPage() {
         if (!res.ok) throw new Error('Delete failed');
       }
       setKbs((prev) => prev.filter((kb) => kb.id !== kbId));
+      toast.success('Xóa Workspace thành công');
     } catch (error) {
       console.error('Lỗi khi xóa workspace:', error);
-      alert('Xóa thất bại. Vui lòng thử lại.');
+      toast.error('Xóa thất bại. Vui lòng thử lại.');
     } finally {
       setDeletingId(null);
       setConfirmDeleteId(null);

@@ -241,7 +241,19 @@ def get_document(event: dict, document_id: str | None) -> dict:
     ws = ws_table.get_item(Key={"workspace_id": item.get("workspace_id")}).get("Item")
     if not ws or ws.get("user_id") != user_id:
         raise PermissionError("Access Denied: Document belongs to another user")
-        
+    # Generate a presigned GET URL valid for 1 hour
+    s3_key = item.get("s3_key")
+    if s3_key:
+        try:
+            presigned_url = s3.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': S3_BUCKET, 'Key': s3_key},
+                ExpiresIn=3600
+            )
+            item["view_url"] = presigned_url
+        except Exception as exc:
+            print(f"Error generating presigned url for {s3_key}: {exc}")
+
     return respond(200, {"document": item})
 
 

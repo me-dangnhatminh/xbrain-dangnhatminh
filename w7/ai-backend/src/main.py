@@ -107,7 +107,11 @@ def chat_with_docs(
                 "latency_ms": latency_ms,
             },
         )
-        return {"answer": response.answer, "sources": response.sources}
+        return {
+            "answer": response.answer, 
+            "sources": response.sources,
+            "chunks": [chunk.__dict__ for chunk in response.chunks_used]
+        }
 
     except RuntimeError as exc:
         logger.error("chat_error", extra={"composite_workspace_id": composite_workspace_id}, exc_info=True)

@@ -28,6 +28,7 @@ class Chunk:
     text: str
     source: str
     score: float
+    page_number: Optional[int] = None
 
 
 @dataclass
@@ -126,7 +127,16 @@ class RAGPipeline:
                     continue
                 text = result.get("content", {}).get("text", "")
                 uri = result.get("location", {}).get("s3Location", {}).get("uri", "")
-                chunks.append(Chunk(text=text, source=_parse_source(uri), score=score))
+                # Extract page number from Bedrock KB metadata (auto-generated for PDF)
+                metadata = result.get("metadata", {})
+                raw_page = metadata.get("x-amz-bedrock-kb-document-page-number")
+                page_number = None
+                if raw_page is not None:
+                    try:
+                        page_number = int(raw_page)
+                    except (ValueError, TypeError):
+                        pass
+                chunks.append(Chunk(text=text, source=_parse_source(uri), score=score, page_number=page_number))
 
             if not raw_results:
                 logger.warning(
