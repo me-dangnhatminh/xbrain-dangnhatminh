@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
@@ -268,10 +268,10 @@ export default function KBDetailPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${user.idToken}`,
         },
-        body: JSON.stringify({ 
-          query: userMsg.content, 
+        body: JSON.stringify({
+          query: userMsg.content,
           workspace_id: kbId,
-          history: messages 
+          history: messages,
         }),
       });
 
@@ -492,8 +492,7 @@ export default function KBDetailPage() {
                             variant="secondary"
                             className="text-[10px] px-1.5 py-0 bg-red-50 text-red-700 border-red-200"
                           >
-                            <AlertCircle className="h-2.5 w-2.5 mr-0.5" />{" "}
-                            Error
+                            <AlertCircle className="h-2.5 w-2.5 mr-0.5" /> Error
                           </Badge>
                         ) : (
                           <Badge
@@ -728,29 +727,38 @@ export default function KBDetailPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-4 bg-white border-t border-slate-200">
+          <div className="p-4 bg-white/80 backdrop-blur-md border-t border-slate-200">
             <form
               onSubmit={handleSendMessage}
-              className="max-w-3xl mx-auto relative flex items-center"
+              className="max-w-3xl mx-auto relative flex items-end bg-slate-50 border border-slate-200 rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-400 transition-all duration-200"
             >
-              <Input
+              <Textarea
                 value={inputValue}
                 onChange={(e: any) => setInputValue(e.target.value)}
+                onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (inputValue.trim() && !isThinking) {
+                      handleSendMessage(e as any);
+                    }
+                  }
+                }}
                 placeholder="Ask a question about your documents..."
-                className="pr-12 py-6 rounded-full border-slate-300 shadow-sm focus-visible:ring-blue-500"
+                className="resize-none min-h-[56px] max-h-48 py-4 pl-4 pr-14 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none scrollbar-thin text-base"
                 disabled={isThinking}
+                rows={1}
               />
               <Button
                 type="submit"
                 size="icon"
-                className="absolute right-1.5 h-9 w-9 rounded-full bg-blue-600 hover:bg-blue-700"
+                className="absolute right-2 bottom-2 h-10 w-10 rounded-xl bg-blue-600 hover:bg-blue-700 transition-colors"
                 disabled={!inputValue.trim() || isThinking}
               >
                 <Send className="h-4 w-4 text-white" />
               </Button>
             </form>
-            <div className="text-center mt-2">
-              <p className="text-[10px] text-slate-400">
+            <div className="text-center mt-3">
+              <p className="text-[11px] text-slate-400 font-medium">
                 AI can make mistakes. Check important information.
               </p>
             </div>
